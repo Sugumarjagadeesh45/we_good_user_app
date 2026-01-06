@@ -26,9 +26,26 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const fetchWalletBalance = useCallback(async () => {
     try {
       setLoading(true);
-      const token = await AsyncStorage.getItem('userToken') || await AsyncStorage.getItem('authToken');
-      const backendUrl = getBackendUrl();
+      const token = await AsyncStorage.getItem('authToken') || await AsyncStorage.getItem('userToken');
 
+      // If no token, user is not logged in yet - this is expected, not an error
+      if (!token) {
+        console.log('ℹ️ No auth token found - user not logged in yet');
+        // Try to load cached balance
+        try {
+          const cached = await AsyncStorage.getItem('userWalletBalance');
+          if (cached) {
+            setWalletBalance(parseFloat(cached));
+            console.log('💾 Using cached wallet balance:', cached);
+          }
+        } catch (cacheError) {
+          console.log('ℹ️ No cached balance available');
+        }
+        setLoading(false);
+        return;
+      }
+
+      const backendUrl = getBackendUrl();
       console.log('💰 Fetching wallet balance from:', `${backendUrl}/api/wallet/balance`);
       console.log('🔑 Using token:', token?.substring(0, 20) + '...');
 

@@ -465,8 +465,8 @@ For questions about this privacy policy, contact us at privacy@rideeasy.com
             style={styles.appIcon}
             resizeMode="contain"
           />
-          <Text style={styles.appName}>RideEasy</Text>
-          <Text style={styles.appVersion}>{t('appVersion')} 4.2.1</Text>
+          <Text style={styles.appName}>EasyGo</Text>
+          <Text style={styles.appVersion}>{t('appVersion')} 1.0.0</Text>
         </View>
         
         {/* Notification Settings Section */}

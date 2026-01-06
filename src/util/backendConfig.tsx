@@ -4,8 +4,8 @@ import { Platform } from 'react-native';
 // 🏠 LOCALHOST CONFIGURATION
 // -----------------------------------------
 
-const PORT = '5001';
 const LOCAL_IP = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
+const PORT = '5001';
 
 // Base URL for API calls
 export const API_BASE_URL = `http://${LOCAL_IP}:${PORT}`;
@@ -28,28 +28,50 @@ export const getSocketUrl = (): string => {
 };
 
 // ----------- IMAGE URL HANDLERS -------------- ///
-// Main image URL handler
-export const getImageUrl = (imagePath: string): string => {
-  if (!imagePath) return "";
+/**
+ * Main image URL handler.
+ * @param cacheBust - Appends a timestamp to bypass image cache, useful for profile pictures.
+ */
+export const getImageUrl = (imagePath: string, cacheBust: boolean = false): string => {
+  if (!imagePath) {
+    console.log('⚠️ getImageUrl: Empty image path, returning placeholder');
+    return "https://via.placeholder.com/150";
+  }
 
   const backendUrl = getBackendUrl();
+  console.log(`🖼️ getImageUrl called with: "${imagePath}"`);
+  console.log(`🔗 Backend URL: ${backendUrl}`);
 
   // If it's already a complete URL
   if (imagePath.startsWith("http")) {
+    // Fix localhost URLs coming from database
+    if (imagePath.includes('localhost') || imagePath.includes('10.0.2.2')) {
+      const fixedUrl = imagePath.replace(/https?:\/\/(localhost|10\.0\.2\.2)(:\d+)?/i, backendUrl);
+      console.log(`🔄 FIXED localhost URL: ${imagePath} → ${fixedUrl}`);
+      return fixedUrl;
+    }
+    console.log(`✅ Using existing full URL: ${imagePath}`);
     return imagePath;
   }
 
   // Handle different path formats
+  let finalUrl = "";
   if (imagePath.startsWith("/uploads/")) {
-    return `${backendUrl}${imagePath}`;
+    finalUrl = `${backendUrl}${imagePath}`;
+  } else if (imagePath.startsWith("uploads/")) {
+    finalUrl = `${backendUrl}/${imagePath}`;
+  } else {
+    // Default case
+    finalUrl = `${backendUrl}/uploads/${imagePath}`;
   }
 
-  if (imagePath.startsWith("uploads/")) {
-    return `${backendUrl}/${imagePath}`;
+  if (cacheBust) {
+    finalUrl += `?t=${Date.now()}`;
+    console.log(`✨ Generated image URL (cache-busted): ${finalUrl}`);
+  } else {
+    console.log(`✨ Generated image URL: ${finalUrl}`);
   }
-
-  // Default case
-  return `${backendUrl}/uploads/${imagePath}`;
+  return finalUrl;
 };
 
 // Add this missing function that your components need

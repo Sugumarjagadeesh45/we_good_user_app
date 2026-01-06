@@ -2,29 +2,25 @@ import io from 'socket.io-client';
 import { Platform } from 'react-native';
 
 // -----------------------------------------
-//  LOCALHOST CONFIGURATION
+//  SOCKET CONFIGURATION (NGROK for Real Devices)
 // -----------------------------------------
-const PORT = '5001';
-const IP = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
-const SOCKET_URL = `http://${IP}:${PORT}`;
+// Use ngrok URL for socket connections (driver/user location tracking)
+const SOCKET_URL = 'https://2175e392da42.ngrok-free.app';
 
-console.log('🔗 Connecting Socket to LOCAL SERVER:', SOCKET_URL);
+console.log('🔗 Connecting Socket to NGROK:', SOCKET_URL);
 
 const socket = io(SOCKET_URL, {
   transports: ['websocket'],
-  reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
   timeout: 20000,
   forceNew: true,
   autoConnect: true,
-  secure: false, // Localhost is usually http
 });
 
-
 socket.on('connect', () => {
-  console.log('✅ SOCKET CONNECTED:', socket.id);
+  console.log('✅ Socket Connected:', socket.id);
 });
 
 socket.on('connect_error', (error) => {

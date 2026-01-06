@@ -1,10 +1,10 @@
 // /Users/webasebrandings/Downloads/new-main/src/Screen1/Shopping/ProfessionalShoppingContent.tsx
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  FlatList, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
   TextInput,
   Alert,
   RefreshControl,
@@ -20,7 +20,7 @@ import { useNavigation } from '@react-navigation/native';
 import axios from 'axios';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useCart } from './ShoppingContent';
-import { getBackendUrl, getImageUrl } from '../../../src/util/backendConfig';
+import { getImageUrl, getBackendUrl } from '../../util/backendConfig';
 
 const { width } = Dimensions.get('window');
 
@@ -63,7 +63,6 @@ const ProfessionalShoppingContent = () => {
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
   const [bannerScrollX] = useState(new Animated.Value(0));
 
-  const BASE_URL = getBackendUrl();
 
   // Function to calculate discount percentage
   const calculateDiscount = (originalPrice: number, currentPrice: number) => {
@@ -112,7 +111,7 @@ const ProfessionalShoppingContent = () => {
 
   const fetchCategories = async () => {
     try {
-      const response = await axios.get(`${BASE_URL}/api/groceries/categories`);
+      const response = await axios.get(`${getBackendUrl()}/api/groceries/categories`);
       if (response.data.success) {
         setCategories(response.data.data);
       }
@@ -124,7 +123,7 @@ const ProfessionalShoppingContent = () => {
 
   const fetchProducts = async () => {
     try {
-      const response = await axios.get(`${BASE_URL}/api/groceries`);
+      const response = await axios.get(`${getBackendUrl()}/api/groceries`);
       if (response.data.success) {
         const allProducts: Product[] = response.data.data || [];
         setProducts(allProducts);
@@ -139,7 +138,7 @@ const ProfessionalShoppingContent = () => {
 
   const fetchBanners = async () => {
     try {
-      const response = await axios.get(`${BASE_URL}/api/banners?activeOnly=true`);
+      const response = await axios.get(`${getBackendUrl()}/api/banners?activeOnly=true`);
       if (response.data.success) {
         setBanners(response.data.data || []);
       }

@@ -6,7 +6,8 @@ import { useAddress } from './AddressContext';
 import Geolocation from '@react-native-community/geolocation';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getBackendUrl } from '../../../src/util/backendConfig';
+
+const BASE_URL = 'https://backend-besafe.onrender.com';
 
 const AddressManagement = () => {
   const navigation = useNavigation();
@@ -105,9 +106,8 @@ const AddressManagement = () => {
       const token = await AsyncStorage.getItem('userToken') || await AsyncStorage.getItem('authToken');
       if (!token) return;
 
-      const backendUrl = getBackendUrl();
       await axios.put(
-        `${backendUrl}/api/users/profile`,
+        `${BASE_URL}/api/users/profile`,
         {
           address: addressData.addressLine1,
           name: addressData.name,

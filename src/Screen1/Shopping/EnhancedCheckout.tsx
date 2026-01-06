@@ -14,7 +14,8 @@ import { useCart } from './ShoppingContent';
 import { useAddress } from './AddressContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { getBackendUrl } from '../../../src/util/backendConfig';
+
+const BASE_URL = 'https://backend-besafe.onrender.com';
 
 const EnhancedCheckout = () => {
   const navigation = useNavigation();
@@ -24,7 +25,6 @@ const EnhancedCheckout = () => {
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
 
-  const BASE_URL = getBackendUrl();
 
   useEffect(() => {
     loadUserData();

@@ -96,28 +96,61 @@ LanguageProvider
 
 ## Backend Configuration
 
-### Current Setup: Localhost Development
+### Current Setup: Dual Configuration (API vs Socket)
 
-All backend connections are configured for **localhost development**:
+Backend connections use **different configurations** for API calls vs Socket.IO:
 
 **Files**:
-- [src/socket.ts](src/socket.ts) - Socket.IO connection
-- [src/util/backendConfig.tsx](src/util/backendConfig.tsx) - API base URL
+- [src/socket.ts](src/socket.ts) - Socket.IO connection (uses ngrok)
+- [src/util/backendConfig.tsx](src/util/backendConfig.tsx) - API base URL (uses localhost)
 
-**URLs**:
+**API Endpoints (localhost)**:
 - **Android Emulator**: `http://10.0.2.2:5001`
 - **iOS Simulator**: `http://localhost:5001`
 
-The backend URL is automatically determined based on platform:
+The API URL is automatically determined based on platform:
 ```typescript
 const IP = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 const PORT = '5001';
 ```
 
+**Socket.IO Connection (ngrok)**:
+- Uses ngrok tunnel for real device testing: `https://2175e392da42.ngrok-free.app`
+- Update this URL in [socket.ts](src/socket.ts) when ngrok URL changes
+- Ngrok is used because Socket.IO requires public URL for real device testing
+
 ### Backend API Endpoints
 
+**REST API**:
 - `GET /api/wallet/balance` - Fetch user wallet balance (requires Bearer token)
-- Socket events: `rideCompleted`, `walletUpdate`, `driverLiveLocationUpdate`
+
+**Socket Events**:
+- `rideCompleted` - Ride completion with billing data
+- `walletUpdate` - Wallet balance updates
+- `driverLiveLocationUpdate` - Real-time driver location during rides
+- `ride_request` - Ride alert to drivers (filtered by vehicle type)
+
+### Image URL Handling
+
+The app has built-in image URL management in [backendConfig.tsx](src/util/backendConfig.tsx):
+
+**Key Functions**:
+- `getImageUrl(imagePath, cacheBust?)` - Main image URL handler
+- `getProductImageUrl(imagePath)` - Product image URLs
+
+**Features**:
+- Automatically fixes localhost URLs from database
+- Handles multiple path formats (`/uploads/`, `uploads/`, or plain filenames)
+- Optional cache-busting with timestamps (useful for profile pictures)
+- Falls back to placeholder for empty paths
+
+**Usage**:
+```typescript
+import { getImageUrl, getProductImageUrl } from './util/backendConfig';
+
+const profilePic = getImageUrl(user.profileImage, true); // Cache-bust
+const productImg = getProductImageUrl(product.image);
+```
 
 ## Important Implementation Details
 
@@ -131,7 +164,11 @@ The app uses Socket.IO for real-time features:
 Socket configuration in [src/socket.ts](src/socket.ts):
 ```typescript
 transports: ['websocket']
-reconnection: true
+reconnectionAttempts: Infinity
+reconnectionDelay: 1000
+reconnectionDelayMax: 5000
+timeout: 20000
+forceNew: true
 autoConnect: true
 ```
 
@@ -186,6 +223,21 @@ When a ride completes:
 3. WalletContext updates global balance
 4. User can view details or close
 
+### Vehicle Type Selection System
+
+**Critical Requirement**: The app supports multiple vehicle types (`taxi`, `port`, `bike`).
+
+**User Booking Flow**:
+1. User selects vehicle type during ride booking
+2. Backend filters drivers by `vehicleType` AND `isOnline` status
+3. Only matching drivers receive ride alerts via Socket.IO
+
+**Important Rules** (see [ride_booking_note.md](ride_booking_note.md)):
+- Vehicle types must always be **lowercase** in comparisons
+- Driver's `vehicleType` field is **immutable** during ride booking flow
+- Never hardcode `"taxi"` in ride logic - use user-selected type
+- Backend must filter: `driver.vehicleType === ride.vehicleType && driver.isOnline === true`
+
 ### Metro Config - SVG Support
 
 The app uses [react-native-svg-transformer](https://github.com/kristerkari/react-native-svg-transformer) for importing SVG files directly:
@@ -235,6 +287,8 @@ src/
 ### Platform-Specific Backend URLs
 Always use the `getBackendUrl()` function from [backendConfig.tsx](src/util/backendConfig.tsx) rather than hardcoding URLs. It automatically handles Android emulator's special IP address (`10.0.2.2`).
 
+**Important**: Socket.IO uses a separate ngrok URL configured in [socket.ts](src/socket.ts). This URL must be manually updated when the ngrok tunnel expires or changes.
+
 ### AsyncStorage Token Keys
 The app historically used both `authToken` and `userToken` keys. Always check both when retrieving tokens:
 ```typescript
@@ -244,10 +298,23 @@ const token = await AsyncStorage.getItem('authToken') || await AsyncStorage.getI
 ### Socket Connection Timing
 Socket initialization happens in [socket.ts](src/socket.ts) at app startup. Ensure socket event listeners are registered after connection is established. Check `socket.connected` or listen for `connect` event.
 
-### iOS Permissions
+### iOS Permissions & CocoaPods
 Firebase Auth and Geolocation require proper iOS permissions. Check Info.plist for:
 - Location permissions (NSLocationWhenInUseUsageDescription)
 - Camera/Photo Library (for profile pictures)
+
+Before running on iOS, ensure CocoaPods dependencies are installed:
+```bash
+cd ios && bundle exec pod install && cd ..
+```
+
+If you encounter pod installation issues, try:
+```bash
+cd ios
+rm -rf Pods Podfile.lock
+bundle exec pod install
+cd ..
+```
 
 ## Testing Workflow
 
@@ -267,22 +334,30 @@ Firebase Auth and Geolocation require proper iOS permissions. Check Info.plist f
 ## Documentation Files
 
 Several implementation guides exist for specific features:
-- [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Quick setup guide
-- [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) - Wallet & animation implementation details
-- [TAXICONTENT_IMPLEMENTATION_GUIDE.md](TAXICONTENT_IMPLEMENTATION_GUIDE.md) - Step-by-step TaxiContent.tsx integration
-- [WALLET_DEBUGGING_GUIDE.md](WALLET_DEBUGGING_GUIDE.md) - Wallet troubleshooting
-- [RIDE_COMPLETION_DEBUGGING.md](RIDE_COMPLETION_DEBUGGING.md) - Ride completion flow debugging
-- [GOOGLE_MAPS_OPTIMIZATION_COMPLETE.md](GOOGLE_MAPS_OPTIMIZATION_COMPLETE.md) - Google Maps smooth animation fixes (2026-01-02)
-- [TESTING_GUIDE.md](TESTING_GUIDE.md) - How to test smooth animations
+- [ride_booking_note.md](ride_booking_note.md) - **Critical**: Vehicle type-based driver alert system requirements
 
-When working on wallet or ride completion features, consult these guides first.
+**Note**: Other documentation files referenced in git status have been deleted:
+- QUICK_REFERENCE.md
+- IMPLEMENTATION_SUMMARY.md
+- TAXICONTENT_IMPLEMENTATION_GUIDE.md
+- WALLET_DEBUGGING_GUIDE.md
+- RIDE_COMPLETION_DEBUGGING.md
+- GOOGLE_MAPS_OPTIMIZATION_COMPLETE.md
+- TESTING_GUIDE.md
 
-## Recent Critical Fixes (2026-01-02)
+If you need information from these guides, they may exist in git history.
 
-Three critical animation fixes were applied to achieve Uber/Ola/Rapido-level smoothness:
+## Recent Changes
 
-1. **Animation Timing Synchronization**: Fixed driver marker animation to match update interval (1000ms), eliminating gaps and stuttering
-2. **AnimatedRegion Coordinate Extraction**: Corrected coordinate passing to Marker.Animated component, fixing jumpy movement
-3. **Polyline Rendering Optimization**: Added stable key and geodesic rendering for flicker-free route updates
+### Animation Improvements (Historical)
+Three critical animation fixes were previously applied to achieve Uber/Ola/Rapido-level smoothness:
 
-See [GOOGLE_MAPS_OPTIMIZATION_COMPLETE.md](GOOGLE_MAPS_OPTIMIZATION_COMPLETE.md) for full technical details.
+1. **Animation Timing Synchronization**: Driver marker animation matches update interval (1000ms)
+2. **AnimatedRegion Coordinate Extraction**: Proper coordinate passing to Marker.Animated component
+3. **Polyline Rendering Optimization**: Stable key and geodesic rendering for flicker-free route updates
+
+Driver animations are now handled by [driverAnimationHelper.ts](src/utils/driverAnimationHelper.ts) with GPS jitter filtering and smooth rotation.
+
+### Current Development Focus
+- Vehicle type-based driver filtering system (see [ride_booking_note.md](ride_booking_note.md))
+- Shopping features with Enhanced components (EnhancedBuying, EnhancedCart, EnhancedMyOrders)

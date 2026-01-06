@@ -4,6 +4,7 @@ import { View, Text, StyleSheet } from 'react-native';
 
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import ProfessionalShoppingContent from './ProfessionalShoppingContent';
 
 const CART_STORAGE_KEY = 'user_cart_data'
 
@@ -155,8 +156,6 @@ export const useCart = () => {
   return context;
 };
 
-import ProfessionalShoppingContent from './ProfessionalShoppingContent';
-
 const ShoppingContent = () => {
   return <ProfessionalShoppingContent />;
 };
@@ -169,4 +168,3 @@ const styles = StyleSheet.create({
 });
 
 export default ShoppingContent;
-

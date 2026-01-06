@@ -20,7 +20,7 @@ import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { launchImageLibrary, ImagePickerResponse, Asset } from 'react-native-image-picker';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getBackendUrl } from '../../util/backendConfig';
+import { getBackendUrl, getImageUrl } from '../../util/backendConfig';
 import Geolocation from '@react-native-community/geolocation';
 
 interface ProfileData {
@@ -93,17 +93,7 @@ const fetchUserProfile = async () => {
     if (response.data.success) {
       const user = response.data.user;
       
-      // Clean the profile picture URL
-      let profilePictureUrl = '';
-      if (user.profilePicture) {
-        if (user.profilePicture.startsWith('http')) {
-          profilePictureUrl = user.profilePicture;
-        } else if (user.profilePicture.startsWith('/uploads/')) {
-          profilePictureUrl = `${backendUrl}${user.profilePicture}?t=${Date.now()}`;
-        } else {
-          profilePictureUrl = `${backendUrl}/uploads/${user.profilePicture}?t=${Date.now()}`;
-        }
-      }
+      const profilePictureUrl = user.profilePicture ? getImageUrl(user.profilePicture, true) : '';
       
       const updatedProfile = {
         name: user.name || '',
@@ -203,9 +193,7 @@ const fetchUserProfile = async () => {
       
       if (response.data.success) {
         const user = response.data.user;
-        const imageUrl = user.profilePicture 
-          ? `${backendUrl}${user.profilePicture}?t=${Date.now()}`
-          : '';
+        const imageUrl = user.profilePicture ? getImageUrl(user.profilePicture, true) : '';
         
         const updatedProfile = {
           name: user.name,
@@ -301,9 +289,7 @@ const fetchUserProfile = async () => {
       
       if (response.data.success) {
         const user = response.data.user;
-        const imageUrl = user.profilePicture 
-          ? `${backendUrl}${user.profilePicture}?t=${Date.now()}`
-          : '';
+        const imageUrl = user.profilePicture ? getImageUrl(user.profilePicture, true) : '';
         
         const updatedProfile = {
           ...profileData,

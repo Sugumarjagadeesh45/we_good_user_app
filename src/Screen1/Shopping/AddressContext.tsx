@@ -1,8 +1,9 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import { Alert } from 'react-native';
 import axios from 'axios';
-import { getBackendUrl } from '../../../src/util/backendConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const BASE_URL = 'https://backend-besafe.onrender.com';
 
 interface Address {
   id: string;
@@ -154,9 +155,8 @@ export const AddressProvider: React.FC<{ children: ReactNode }> = ({ children })
       const token = await AsyncStorage.getItem('userToken') || await AsyncStorage.getItem('authToken');
       
       if (token) {
-        const backendUrl = getBackendUrl();
         await axios.delete(
-          `${backendUrl}/api/users/addresses/${id}`,
+          `${BASE_URL}/api/users/addresses/${id}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
       }
@@ -175,9 +175,8 @@ export const AddressProvider: React.FC<{ children: ReactNode }> = ({ children })
       const token = await AsyncStorage.getItem('userToken') || await AsyncStorage.getItem('authToken');
       
       if (token) {
-        const backendUrl = getBackendUrl();
         await axios.patch(
-          `${backendUrl}/api/users/addresses/${id}/set-default`,
+          `${BASE_URL}/api/users/addresses/${id}/set-default`,
           {},
           { headers: { Authorization: `Bearer ${token}` } }
         );

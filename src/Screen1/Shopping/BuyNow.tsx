@@ -1,23 +1,23 @@
 // /Users/webasebrandings/Documents/new-main/src/Screen1/Shopping/BuyNow.tsx
 import React, { useState, useContext, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  FlatList, 
-  Image, 
-  TouchableOpacity, 
-  Alert, 
-  ScrollView, 
-  ActivityIndicator 
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Image,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+  ActivityIndicator
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation } from '@react-navigation/native';
 import { CartContext } from './ShoppingContent';
 import { useAddress } from './AddressContext';
-import { getImageUrl, getBackendUrl } from '../../../src/util/backendConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { getImageUrl, getBackendUrl } from '../../util/backendConfig';
 
 const BuyNow = () => {
   const navigation = useNavigation();
@@ -93,13 +93,30 @@ const handleCheckout = async () => {
       if (userProfile) {
         userProfileData = JSON.parse(userProfile);
       } else {
-        throw new Error('User data not found');
+        // Fallback: Fetch profile from API if missing in storage
+        try {
+          console.log('⚠️ User profile not found in storage, fetching from API...');
+          const profileResponse = await axios.get(`${getBackendUrl()}/api/users/profile`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (profileResponse.data.success || profileResponse.data.user) {
+            userProfileData = profileResponse.data.user || profileResponse.data;
+            // Save for future use
+            await AsyncStorage.setItem('userProfile', JSON.stringify(userProfileData));
+            setUserData(userProfileData);
+          } else {
+            throw new Error('Failed to fetch user profile');
+          }
+        } catch (fetchError) {
+          console.error('Error fetching profile in BuyNow:', fetchError);
+          throw new Error('User data not found. Please go back to Home screen to refresh.');
+        }
       }
     }
 
-    const BASE_URL = getBackendUrl();
-    
-    console.log('🔗 Using backend URL:', BASE_URL);
+
+    console.log('🔗 Using backend URL:', getBackendUrl());
     console.log('👤 User Profile Data:', userProfileData);
 
     // Extract identifiers
@@ -143,7 +160,7 @@ const handleCheckout = async () => {
 
     // ✅ FIRST: Test if the main order endpoint exists
     try {
-      const testResponse = await axios.get(`${BASE_URL}/api/orders/test-connection`, {
+      const testResponse = await axios.get(`${getBackendUrl()}/api/orders/test-connection`, {
         timeout: 5000
       });
       console.log('✅ Order endpoint test successful:', testResponse.data);
@@ -155,7 +172,7 @@ const handleCheckout = async () => {
     // ✅ SECOND: Try to create order using main endpoint
     console.log('🚀 Attempting to create order via /api/orders/create...');
     const orderResponse = await axios.post(
-      `${BASE_URL}/api/orders/create`,
+      `${getBackendUrl()}/api/orders/create`,
       orderData,
       {
         headers: {

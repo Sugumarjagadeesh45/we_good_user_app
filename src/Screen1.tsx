@@ -28,6 +28,7 @@ import TaxiContent from './Screen1/Taxibooking/TaxiContent';
 import ShoppingContent from './Screen1/Shopping/ShoppingContent';
 import Notifications from './Screen1/Bellicon/Notifications';
 import { getBackendUrl } from './util/backendConfig';
+import { useWallet } from './context/WalletContext';
 
 const { width, height } = Dimensions.get('window');
 
@@ -89,6 +90,7 @@ const mockCategories: Category[] = [
 export default function Screen1() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const { fetchWalletBalance } = useWallet();
   const [activeTab, setActiveTab] = useState<'taxi' | 'shopping'>('taxi');
   const [menuVisible, setMenuVisible] = useState(false);
   const [notificationsVisible, setNotificationsVisible] = useState(false);
@@ -114,7 +116,7 @@ export default function Screen1() {
     const [registrationCompleted, setRegistrationCompleted] = useState(false);
 
   const getBackendUrls = () => {
-    const baseUrl = getBackendUrl();
+    const baseUrl = 'https://backend-besafe.onrender.com';
     return {
       register: `${baseUrl}/api/auth/register`,
       profile: `${baseUrl}/api/users/profile`,
@@ -172,60 +174,10 @@ export default function Screen1() {
     const isRegisteredParam = route.params?.isRegistered;
     const needsRegistrationParam = route.params?.needsRegistration;
     
-    // If explicitly marked as registered
-    if (isRegisteredParam === true || isRegistered === 'true') {
-      if (authToken) {
-        try {
-          const response = await axios.get(urls.profile, {
-            headers: { Authorization: `Bearer ${authToken}` },
-            timeout: 10000,
-          });
-          
-          console.log('📋 Profile API Response:', response.data);
-          
-          const userData = response.data.user || response.data;
-          const { name, phoneNumber, customerId, profilePicture } = userData;
-          
-          setUserData({ 
-            name: name || '', 
-            phoneNumber: phoneNumber || '', 
-            customerId: customerId || '', 
-            profilePicture: profilePicture || '' 
-          });
-          setName(name || '');
-          setPhoneNumber(phoneNumber || '');
-          setShowRegistrationModal(false);
-          
-        } catch (error) {
-          console.error('Error fetching profile:', error);
-          // Don't show registration modal for registered users even if profile fetch fails
-          setShowRegistrationModal(false);
-        }
-      }
-      return;
-    }
-    
-    // If needs registration
-    if (needsRegistrationParam === true || isRegistered === 'false') {
-      setShowRegistrationModal(true);
-      setPhoneNumber(phoneNumber || '');
-      return;
-    }
-    
-    // If temp token but no auth token
-    if (tempToken && !authToken && !registrationCompleted) {
-      setShowRegistrationModal(true);
-      setPhoneNumber(phoneNumber || '');
-      return;
-    }
-    
-    // If no tokens at all
-    if (!tempToken && !authToken) {
-      navigation.reset({ index: 0, routes: [{ name: 'WelcomeScreen3' }] });
-      return;
-    }
-    
-    // If proper auth token exists
+    // ---------------------------------------------------------
+    // FIX: Check Auth Token FIRST, regardless of isRegistered flag
+    // This fixes the issue where existing users are forced to register
+    // ---------------------------------------------------------
     if (authToken) {
       try {
         const response = await axios.get(urls.profile, {
@@ -238,6 +190,9 @@ export default function Screen1() {
         const userData = response.data.user || response.data;
         const { name, phoneNumber, customerId, profilePicture } = userData;
         
+        // Save complete profile to AsyncStorage for other screens (Shopping, etc.)
+        await AsyncStorage.setItem('userProfile', JSON.stringify(userData));
+        
         setUserData({ 
           name: name || '', 
           phoneNumber: phoneNumber || '', 
@@ -246,16 +201,40 @@ export default function Screen1() {
         });
         setName(name || '');
         setPhoneNumber(phoneNumber || '');
+        
+        // Ensure local storage is in sync
+        if (isRegistered !== 'true') {
+          await AsyncStorage.setItem('isRegistered', 'true');
+        }
+        
         setShowRegistrationModal(false);
+        return;
         
       } catch (error: any) {
         console.error('Error fetching profile:', error);
-        // Handle 401 specifically
+        // Only if 401 (Unauthorized), we treat as not logged in
         if (error.response?.status === 401) {
           await AsyncStorage.multiRemove(['authToken', 'tempAuthToken', 'isRegistered']);
           navigation.reset({ index: 0, routes: [{ name: 'WelcomeScreen3' }] });
+          return;
         }
+        // For other errors, assume registered if we have token
+        setShowRegistrationModal(false);
+        return;
       }
+    }
+    
+    // If no auth token, handle registration flow
+    if (needsRegistrationParam === true || isRegistered === 'false' || (tempToken && !authToken)) {
+      setShowRegistrationModal(true);
+      setPhoneNumber(phoneNumber || '');
+      return;
+    }
+    
+    // If no tokens at all
+    if (!tempToken && !authToken) {
+      navigation.reset({ index: 0, routes: [{ name: 'WelcomeScreen3' }] });
+      return;
     }
     
   } catch (error: any) {
@@ -285,6 +264,20 @@ useEffect(() => {
     navigation.setParams({ refresh: false });
   }
 }, [route.params?.refresh, fetchUserData]);
+
+  // Fetch wallet balance when screen is focused (after login or when returning to screen)
+  useFocusEffect(
+    useCallback(() => {
+      const checkAndFetchWallet = async () => {
+        const token = await AsyncStorage.getItem('authToken') || await AsyncStorage.getItem('userToken');
+        if (token) {
+          console.log('🔄 Screen1 focused - fetching wallet balance');
+          fetchWalletBalance();
+        }
+      };
+      checkAndFetchWallet();
+    }, [fetchWalletBalance])
+  );
 
   const handlePickupChange = (text: string) => {
     setPickup(text);
@@ -339,7 +332,7 @@ useEffect(() => {
   };
 
  
-  const handleSubmitRegistration = async () => {const handleSubmitRegistration = async () => {
+  const handleSubmitRegistration = async () => {
   if (!name || !address || !phoneNumber) {
     Alert.alert('Error', 'Name, address, and phone number are required');
     return;
@@ -395,82 +388,6 @@ useEffect(() => {
     console.error('Registration error:', error.response?.data || error.message);
     
     // Handle "already registered" error
-    if (error.response?.data?.error?.includes('already registered')) {
-      Alert.alert(
-        'Already Registered', 
-        'This phone number is already registered. Please try logging in directly.',
-        [
-          {
-            text: 'OK',
-            onPress: async () => {
-              await AsyncStorage.multiRemove(['tempAuthToken', 'verificationId']);
-              navigation.reset({ index: 0, routes: [{ name: 'WelcomeScreen3' }] });
-            }
-          }
-        ]
-      );
-    } else {
-      Alert.alert('Error', error.response?.data?.error || 'Failed to register. Please try again.');
-    }
-  } finally {
-    setLoadingRegistration(false);
-  }
-};
-  if (!name || !address || !phoneNumber) {
-    Alert.alert('Error', 'Name, address, and phone number are required');
-    return;
-  }
-  
-  setLoadingRegistration(true);
-  try {
-    const userData = { name, address, phoneNumber };
-    const urls = getBackendUrls();
-    
-    // Use temp token consistently
-    const tempToken = await AsyncStorage.getItem('tempAuthToken');
-    
-    const response = await axios.post(urls.register, userData, {
-      headers: tempToken ? { Authorization: `Bearer ${tempToken}` } : {}
-    });
-    
-    if (response.data.success && response.data.token) {
-      // Update registration status
-      await AsyncStorage.multiSet([
-        ['authToken', response.data.token],
-        ['isRegistered', 'true'],
-        ['name', name],
-        ['address', address],
-        ['phoneNumber', phoneNumber]
-      ]);
-      
-      // Clear temp token
-      await AsyncStorage.multiRemove(['tempAuthToken', 'verificationId']);
-      
-      // Update state
-      setUserData(prev => ({
-        ...prev,
-        name: name,
-        phoneNumber: phoneNumber
-      }));
-      
-      setShowRegistrationModal(false);
-      setName('');
-      setAddress('');
-      
-      Alert.alert('Success', 'Registration completed successfully');
-      
-      // Refresh user data
-      setTimeout(async () => {
-        await fetchUserData(true);
-      }, 500);
-      
-    } else {
-      throw new Error(response.data.error || 'Registration failed');
-    }
-  } catch (error: any) {
-    console.error('Registration error:', error.response?.data || error.message);
-    
-    // Handle "already registered" error specifically
     if (error.response?.data?.error?.includes('already registered')) {
       Alert.alert(
         'Already Registered', 
@@ -2556,49 +2473,3 @@ const styles = StyleSheet.create({
 //     color: '#666666',
 //   },
 // });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

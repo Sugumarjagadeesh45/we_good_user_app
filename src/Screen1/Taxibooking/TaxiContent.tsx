@@ -1,4 +1,10 @@
 
+
+
+
+
+
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
@@ -20,7 +26,7 @@ import {
   KeyboardAvoidingView,
   AppState
 } from 'react-native';
-import MapView, { Marker, Polyline, Region, PROVIDER_GOOGLE, AnimatedRegion } from 'react-native-maps';
+import MapView, { Marker, Polyline, Region, PROVIDER_GOOGLE } from 'react-native-maps';
 import Geolocation from '@react-native-community/geolocation';
 import socket from '../../socket';
 import haversine from 'haversine-distance';
@@ -32,12 +38,10 @@ import axios from 'axios';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBackendUrl } from '../../util/backendConfig';
-import { useWallet } from '../../context/WalletContext';
 import BikeIcon from '../../../assets001/bike.svg';
 import LorryIcon from '../../../assets001/lorry.svg';
 import TaxiIcon from '../../../assets001/taxi.svg';
 import SearchingAnimation from '../../constants/SearchingAnimation';
-import { GOOGLE_MAP_KEY } from '../../constants/googleMapKey';
 
 // Add this import at the top with your other imports
 import logo from '../../../assets/taxi.png'; 
@@ -313,49 +317,6 @@ const RideTypeSelector = ({ selectedRideType, setSelectedRideType, estimatedPric
   );
 };
 
-// Helper to decode Google Maps Polyline
-const decodePolyline = (encoded: string) => {
-  if (!encoded) return [];
-  const poly = [];
-  let index = 0, len = encoded.length;
-  let lat = 0, lng = 0;
-
-  while (index < len) {
-    let b, shift = 0, result = 0;
-    do {
-      b = encoded.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lat += dlat;
-
-    shift = 0;
-    result = 0;
-    do {
-      b = encoded.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lng += dlng;
-
-    const p = {
-      latitude: lat / 1e5,
-      longitude: lng / 1e5,
-    };
-    poly.push(p);
-  }
-  return poly;
-};
-
-// Helper to check validity of lat/long
-const isValidLatLng = (lat: any, lng: any) => {
-  return typeof lat === 'number' && typeof lng === 'number' &&
-         lat >= -90 && lat <= 90 &&
-         lng >= -180 && lng <= 180;
-};
-
 interface LocationType {
   latitude: number;
   longitude: number;
@@ -380,9 +341,6 @@ interface DriverType {
   vehicleType: string;
   status?: string;
   driverMobile?: string;
-  vehicleNumber?: string;
-  rating?: number;
-  photoUrl?: string;
   _lastUpdate?: number;
   _isActiveDriver?: boolean;
 }
@@ -398,7 +356,7 @@ interface TaxiContentProps {
 }
 
 const TaxiContent: React.FC<TaxiContentProps> = ({
- 
+  loadingLocation: propLoadingLocation,
   currentLocation: propCurrentLocation,
   lastSavedLocation: propLastSavedLocation,
   pickup,
@@ -486,15 +444,6 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   const [followDriver, setFollowDriver] = useState(true);
   const [pulseAnimation] = useState(new Animated.Value(1));
 
-  // Smooth Driver Animation Ref
-  const driverAnimatedRegion = useRef(new AnimatedRegion({
-  
-   
-    latitudeDelta: 0.01,
-    longitudeDelta: 0.01,
-  })).current;
-
-  const { refreshWallet } = useWallet();
   // Refs for state used in socket handlers
   const dropoffLocationRef = useRef(dropoffLocation);
   const rideStatusRef = useRef(rideStatus);
@@ -518,7 +467,6 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   const otpVerifiedAlertShownRef = useRef(otpVerifiedAlertShown);
   const mapZoomLevelRef = useRef(mapZoomLevel);
   const followDriverRef = useRef(followDriver);
-  const dynamicPricesRef = useRef(dynamicPrices);
   
   // Update refs when state changes
   useEffect(() => {
@@ -587,9 +535,6 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   useEffect(() => {
     followDriverRef.current = followDriver;
   }, [followDriver]);
-  useEffect(() => {
-    dynamicPricesRef.current = dynamicPrices;
-  }, [dynamicPrices]);
   
   const pickupDebounceTimer = useRef<NodeJS.Timeout | null>(null);
   const dropoffDebounceTimer = useRef<NodeJS.Timeout | null>(null);
@@ -697,24 +642,26 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   // Real-time route calculation function
   const fetchRealTimeRoute = async (driverLocation: LocationType, dropoffLocation: LocationType) => {
     try {
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${driverLocation.latitude},${driverLocation.longitude}&destination=${dropoffLocation.latitude},${dropoffLocation.longitude}&key=${GOOGLE_MAP_KEY}&mode=driving`;
+      const url = `https://router.project-osrm.org/route/v1/driving/${driverLocation.longitude},${driverLocation.latitude};${dropoffLocation.longitude},${dropoffLocation.latitude}?overview=full&geometries=geojson`;
       const res = await fetch(url);
       const data = await res.json();
       
-      if (data.status === "OK" && data.routes.length > 0) {
-        const points = decodePolyline(data.routes[0].overview_polyline.points);
-        const leg = data.routes[0].legs[0];
+      if (data.code === "Ok" && data.routes.length > 0) {
+        const coords = data.routes[0].geometry.coordinates.map(([lng, lat]: number[]) => ({ 
+          latitude: lat, 
+          longitude: lng 
+        }));
        
-        const currentDistance = leg.distance.text.replace(' km', ''); // Keep numeric string if needed or use text directly
-        const currentTime = Math.ceil(leg.duration.value / 60);
+        const currentDistance = (data.routes[0].distance / 1000).toFixed(2);
+        const currentTime = Math.round(data.routes[0].duration / 60);
         
         console.log(`✅ Real-time Route Calculated FROM DRIVER POSITION`);
-        console.log(`📏 REMAINING Distance: ${leg.distance.text}`);
-        console.log(`📊 Route Points: ${points.length}`);
+        console.log(`📏 REMAINING Distance: ${currentDistance} km`);
+        console.log(`📊 Route Points: ${coords.length}`);
         
         return {
-          coords: points,
-          distance: leg.distance.text,
+          coords,
+          distance: currentDistance,
           time: currentTime
         };
       }
@@ -726,7 +673,7 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
 
   // Enhanced Continuous Driver Animation with Speed-Based Timing
   const animateDriverMarker = useCallback((latitude, longitude, heading = 0) => {
-    if (!isMountedRef.current) return;
+    if (!driverMarkerRef.current || !isMountedRef.current) return;
 
     const newCoordinate = { latitude, longitude };
 
@@ -747,30 +694,32 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
     }
 
     // Calculate speed in km/h for animation timing
-    // FIXED: Use actual update interval (1000ms) instead of hardcoded 2 seconds
-    const timeDiff = 1; // 1 second between updates (matching UPDATE_THROTTLE)
+    const timeDiff = 2; // Assume 2 seconds between updates
     const speedKmh = distanceMoved > 0 ? (distanceMoved / 1000) / (timeDiff / 3600) : 0;
     setCurrentSpeed(speedKmh);
 
-    // OPTIMIZED: Fixed animation duration to match update interval for smooth continuous movement
-    // Always use 1000ms to match the update throttle - prevents gaps and overlaps
-    const animationDuration = 1000; // Match UPDATE_THROTTLE for seamless transitions
+    // Dynamic animation duration based on speed - CONTINUOUS MOVEMENT
+    let animationDuration = 2000; // Base 2 seconds for smooth continuous movement
+    
+    if (speedKmh > 0) {
+      if (speedKmh < 10) animationDuration = 3000; // slow movement - longer duration
+      else if (speedKmh < 30) animationDuration = 2000; // medium movement
+      else if (speedKmh < 60) animationDuration = 1500; // fast movement
+      else animationDuration = 1000; // very fast movement
+    }
 
-    console.log(`🚗 Driver Speed: ${speedKmh.toFixed(1)} km/h | Distance: ${distanceMoved.toFixed(1)}m | Animation: ${animationDuration}ms`);
+    console.log(`🚗 Driver Speed: ${speedKmh.toFixed(1)} km/h | Animation: ${animationDuration}ms`);
 
     // Update displayed location immediately for smooth animation
     setDisplayedDriverLocation(newCoordinate);
 
-    // Smooth Animation using AnimatedRegion (Works on iOS & Android)
-    driverAnimatedRegion.timing({
-      latitude,
-      longitude,
-      duration: animationDuration,
-      useNativeDriver: false, // AnimatedRegion does not support native driver
-    }).start();
+    // Animate marker (Android)
+    if (Platform.OS === 'android' && driverMarkerRef.current) {
+      driverMarkerRef.current.animateMarkerToCoordinate(newCoordinate, animationDuration);
+    }
 
     console.log(`📍 Driver location animated: [${newCoordinate.latitude.toFixed(5)}, ${newCoordinate.longitude.toFixed(5)}]`);
-  }, [displayedDriverLocation, driverAnimatedRegion]);
+  }, [displayedDriverLocation]);
 
   // Smooth Map Following Animation with Zoom Limits
   const animateMapToDriver = useCallback((driverCoord: LocationType, duration: number = 500) => {
@@ -804,8 +753,8 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
     // Animate driver marker with continuous movement
     animateDriverMarker(data.lat, data.lng, data.heading || 0);
 
-    // Animate map to follow driver (if user hasn't interacted)
-    animateMapToDriver(driverCoords, 400);
+    // ❌ DISABLED: Auto-zoom removed - user controls map zoom manually
+    // animateMapToDriver(driverCoords, 400);
 
     // Update route with smooth animation during active navigation
     if (rideStatusRef.current === "started" && realTimeNavigationActiveRef.current && dropoffLocationRef.current) {
@@ -1058,9 +1007,7 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
       if (displayedDriverLocation && acceptedDriver.driverId) {
         return [{ 
           ...acceptedDriver, 
-          location: { coordinates: [displayedDriverLocation.longitude, displayedDriverLocation.latitude] },
-          vehicleType: selectedRideType,
-          _isActiveDriver: true 
+          location: { coordinates: [displayedDriverLocation.longitude, displayedDriverLocation.latitude] },          _isActiveDriver: true 
         }];
       }
       
@@ -1068,7 +1015,6 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
       if (acceptedDriver.driverId) {
         return [{ 
           ...acceptedDriver, 
-          vehicleType: selectedRideType,
           _isActiveDriver: true 
         }];
       }
@@ -1111,7 +1057,7 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
         latitude,
         longitude,
         radius: currentRideId ? 20000 : 10000,
-        vehicleType: selectedRideType,
+        vehicleType: selectedRideType.toLowerCase(),
         requireLiveLocation: true
       });
     } else {
@@ -1123,7 +1069,7 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
           latitude,
           longitude,
           radius: currentRideId ? 20000 : 10000,
-          vehicleType: selectedRideType,
+          vehicleType: selectedRideType.toLowerCase(),
           requireLiveLocation: true
         });
       });
@@ -1174,8 +1120,7 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
           const distB = calculateDistance(location.latitude, location.longitude, b.location.coordinates[1], b.location.coordinates[0]);
           return distA - distB;
         })
-        .slice(0, 10)
-        .map(driver => ({ ...driver, vehicleType: selectedRideType }));
+        .slice(0, 10);
      
       console.log('✅ Filtered drivers count:', filteredDrivers.length);
       setNearbyDrivers(filteredDrivers);
@@ -1489,67 +1434,47 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [rideStatus, bookedPickupLocation, driverLocation, driverArrivedAlertShown]);
+  }, [rideStatus, bookedPickupLocation, driverLocation, driverArrivedAlertShown, acceptedDriver]);
   
-  // ✅ STABLE: Ride completed handler with Bill Modal & Wallet Refresh
+
+  
   useEffect(() => {
-    const handleRideCompleted = (data: any) => {
-      if (!isMountedRef.current) return;
-
-      // Prevent the handler from running multiple times for the same completed ride
-      if (rideStatusRef.current === 'completed') {
-        console.log('⚠️ Ride already marked as completed. Ignoring duplicate event.');
-        return;
-      }
-
-      try {
-        console.log("🎉🎉🎉 RIDE COMPLETED EVENT RECEIVED - Processing Bill & Wallet 🎉🎉🎉");
-        console.log('📦 Ride completion data:', JSON.stringify(data, null, 2));
-
-        // 1. Update ride status immediately
-        setRideStatus("completed");
-        setRealTimeNavigationActive(false);
-        setFollowDriver(false);
-
-        // 2. Prepare bill details from the event data
-        const finalCharge = data?.charge || data?.fare || 0;
-        const billData = {
-          distance: data.distance || `${travelledKmRef.current.toFixed(2)} km`,
-          travelTime: data.travelTime || 'N/A',
-          charge: finalCharge,
-          driverName: data.driverName || acceptedDriverRef.current?.name || 'Driver',
-          vehicleType: data.vehicleType || acceptedDriverRef.current?.vehicleType || 'bike',
-        };
-
-        console.log('📋 Setting bill details:', billData);
-        setBillDetails(billData);
-
-        // 3. Show the bill modal
-        console.log('🔔 Showing bill modal immediately');
-        setShowBillModal(true);
-
-      } catch (error) {
-        console.error('❌ Error in handleRideCompleted:', error);
-      }
-    };
-
-    const handleBillAlert = (data: any) => {
-      if (data.type === 'bill' && data.showBill) {
-        console.log('💰 Bill Alert received, triggering completion flow');
-        handleRideCompleted(data);
-      }
-    };
-
-    console.log('🔊 Registering STABLE ride completion event listeners...');
-    socket.on("rideCompleted", handleRideCompleted);
-    socket.on("billAlert", handleBillAlert);
-
-    return () => {
-      console.log('🔇 Unregistering STABLE ride completion event listeners...');
-      socket.off("rideCompleted", handleRideCompleted);
-      socket.off("billAlert", handleBillAlert);
-    };
-  }, []); // ✅ Empty dependency array ensures this listener is stable
+  if (!isMountedRef.current) return;
+  
+  const handleRideCompleted = (data) => {
+    console.log('🎉 Ride completed in user app:', data);
+    setBillDetails({
+      distance: data.distance || '0 km',
+      travelTime: data.travelTime || '0 mins',
+      charge: data.charge || 0,
+      driverName: data.driverName || 'Driver',
+      vehicleType: data.vehicleType || 'bike'
+    });
+    setShowBillModal(true);
+  };
+  
+  const handleBillAlert = (data) => {
+    console.log('💰 Bill alert received:', data);
+    if (data.type === 'bill' && data.showBill) {
+      setBillDetails({
+        distance: data.distance || '0 km',
+        travelTime: data.travelTime || '0 mins',
+        charge: data.fare || 0,
+        driverName: data.driverName || 'Driver',
+        vehicleType: data.vehicleType || 'bike'
+      });
+      setShowBillModal(true);
+    }
+  };
+  
+  socket.on("rideCompleted", handleRideCompleted);
+  socket.on("billAlert", handleBillAlert);
+  
+  return () => {
+    socket.off("rideCompleted", handleRideCompleted);
+    socket.off("billAlert", handleBillAlert);
+  };
+}, []);
 
 
 
@@ -1649,25 +1574,19 @@ const processRideAcceptance = useCallback((data: any) => {
   setRideStatus("onTheWay");
   setDriverId(data.driverId);
   setDriverName(data.driverName || 'Driver');
-  // ✅ ROBUST: Check for all possible phone number keys from backend notes
-  const mobile = data.driverPhone || data.driverMobile || data.phone || data.phoneNumber || 'N/A';
-  setDriverMobile(mobile);
+  setDriverMobile(data.driverMobile || 'N/A');
   setCurrentRideId(data.rideId);
 
   const acceptedDriverData: DriverType = {
     driverId: data.driverId,
     name: data.driverName || 'Driver',
-    driverMobile: mobile ||data.driverPhone || data.driverMobile || data.phone || data.phoneNumber,
+    driverMobile: data.driverMobile || 'N/A',
     location: {
       // FIX: Always use driver's current location, NOT pickup location
       coordinates: [data.driverLng || data.lng || 0, data.driverLat || data.lat || 0]
     },
-    vehicleType: data.vehicleType || selectedRideType,
-    status: "onTheWay",
-    // ✅ ADDED: Populate additional driver details from backend notes
-    vehicleNumber: data.driverVehicleNumber || '',
-    rating: data.driverRating || 0,
-    photoUrl: data.driverPhoto ? `${getBackendUrl()}${data.driverPhoto}` : '',
+      vehicleType: (data.vehicleType || selectedRideType).toLowerCase(),
+    status: "onTheWay"
   };
 
   console.log('👨‍💼 Setting accepted driver:', acceptedDriverData);
@@ -1696,14 +1615,6 @@ const processRideAcceptance = useCallback((data: any) => {
     setDriverLocation(driverLoc);
     setDisplayedDriverLocation(driverLoc);
     
-    // Snap animated region to initial location immediately
-    driverAnimatedRegion.setValue({
-      latitude: driverLoc.latitude,
-      longitude: driverLoc.longitude,
-      latitudeDelta: 0.01,
-      longitudeDelta: 0.01
-    });
-
     // Request immediate driver location update for real-time tracking
     setTimeout(() => {
       socket.emit('requestDriverLocation', { 
@@ -1757,13 +1668,13 @@ const processRideAcceptance = useCallback((data: any) => {
   setTimeout(() => {
     fitMapToMarkers();
   }, 100);
-}, [selectedRideType, pickupLocation, dropoffLocation, routeCoords, driverAnimatedRegion]);
+}, [selectedRideType, pickupLocation, dropoffLocation, routeCoords]);
 
 
   // Recover ride data on component mount
   useEffect(() => {
     if (!isMountedRef.current) return;
-
+    
     const recoverRideData = async () => {
       try {
         const savedRideId = await AsyncStorage.getItem('currentRideId');
@@ -1832,12 +1743,6 @@ const processRideAcceptance = useCallback((data: any) => {
     if (isValidLatLng(driverLoc?.latitude, driverLoc?.longitude)) {
       setDriverLocation(driverLoc);
       setDisplayedDriverLocation(driverLoc);
-      driverAnimatedRegion.setValue({
-        latitude: driverLoc.latitude,
-        longitude: driverLoc.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01
-      });
       console.log('📍 Restored driver location (valid):', driverLoc);
     } else {
       console.warn('⚠️ Saved driverLocation invalid — ignoring and requesting live update');
@@ -1855,12 +1760,6 @@ const processRideAcceptance = useCallback((data: any) => {
   if (isValidLatLng(driverLoc.latitude, driverLoc.longitude)) {
     setDriverLocation(driverLoc);
     setDisplayedDriverLocation(driverLoc);
-    driverAnimatedRegion.setValue({
-      latitude: driverLoc.latitude,
-      longitude: driverLoc.longitude,
-      latitudeDelta: 0.01,
-      longitudeDelta: 0.01
-    });
     console.log('📍 Using driver data location (valid):', driverLoc);
   } else {
     console.warn('⚠️ DriverData location invalid — requesting live update');
@@ -1960,7 +1859,7 @@ const processRideAcceptance = useCallback((data: any) => {
     };
     
     recoverRideData();
-  }, [propHandlePickupChange, propHandleDropoffChange, driverAnimatedRegion]);
+  }, [propHandlePickupChange, propHandleDropoffChange]);
   
   // Save ride status to AsyncStorage
   useEffect(() => {
@@ -2357,20 +2256,19 @@ const handleRideAccepted = (data: any) => {
     if (!isMountedRef.current) return;
     
     try {
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${pickupCoord.latitude},${pickupCoord.longitude}&destination=${dropCoord.latitude},${dropCoord.longitude}&key=${GOOGLE_MAP_KEY}&mode=driving`;
+      const url = `https://router.project-osrm.org/route/v1/driving/${pickupCoord.longitude},${pickupCoord.latitude};${dropCoord.longitude},${dropCoord.latitude}?overview=full&geometries=geojson`;
       const res = await fetch(url);
       const data = await res.json();
       
-      if (data.status === "OK" && data.routes.length > 0) {
-        const points = decodePolyline(data.routes[0].overview_polyline.points);
-        setRouteCoords(points);
-        const leg = data.routes[0].legs[0];
-        setDistance(leg.distance.text);
-        setTravelTime(leg.duration.text);
+      if (data.code === "Ok" && data.routes.length > 0 && data.routes[0].geometry.coordinates.length >= 2) {
+        const coords = data.routes[0].geometry.coordinates.map(([lng, lat]: number[]) => ({ latitude: lat, longitude: lng }));
+        setRouteCoords(coords);
+        setDistance((data.routes[0].distance / 1000).toFixed(2) + " km");
+        setTravelTime(Math.round(data.routes[0].duration / 60) + " mins");
         
-        await AsyncStorage.setItem('rideRouteCoords', JSON.stringify(points));
-        await AsyncStorage.setItem('rideDistance', leg.distance.text);
-        await AsyncStorage.setItem('rideTravelTime', leg.duration.text);
+        await AsyncStorage.setItem('rideRouteCoords', JSON.stringify(coords));
+        await AsyncStorage.setItem('rideDistance', (data.routes[0].distance / 1000).toFixed(2) + " km");
+        await AsyncStorage.setItem('rideTravelTime', Math.round(data.routes[0].duration / 60) + " mins");
       } else {
         throw new Error("Invalid route data");
       }
@@ -2387,10 +2285,16 @@ const handleRideAccepted = (data: any) => {
     }
   };
   
+  // ❌ DISABLED: Auto-fit map to markers removed - user controls map zoom manually
   // Enhanced map region handling with zoom limits
   const fitMapToMarkers = useCallback(() => {
+    // This function is disabled to prevent automatic zoom changes
+    // Map zoom and position should only be controlled manually by the user
+    return;
+
+    /* ORIGINAL CODE DISABLED:
     if (!mapRef.current || !isMountedRef.current) return;
-    
+
     const markers = [];
     // Use booked pickup location if available, otherwise use current pickup location
     if (bookedPickupLocation && !hidePickupAndUserLocation) {
@@ -2423,27 +2327,28 @@ const handleRideAccepted = (data: any) => {
       });
     }
     if (markers.length === 0) return;
-    
+
     const latitudes = markers.map(marker => marker.latitude);
     const longitudes = markers.map(marker => marker.longitude);
-    
+
     const minLat = Math.min(...latitudes);
     const maxLat = Math.max(...latitudes);
     const minLng = Math.min(...longitudes);
     const maxLng = Math.max(...longitudes);
-    
+
     // Apply zoom limits: 4km for zoom-in, 40km for zoom-out
     const latitudeDelta = Math.max(0.036, Math.min(0.36, (maxLat - minLat) * 1.2));
     const longitudeDelta = Math.max(0.036, Math.min(0.36, (maxLng - minLng) * 1.2));
-    
+
     const region = {
       latitude: (minLat + maxLat) / 2,
       longitude: (minLng + maxLng) / 2,
       latitudeDelta,
       longitudeDelta,
     };
-    
+
     mapRef.current.animateToRegion(region, 1000);
+    */
   }, [pickupLocation, bookedPickupLocation, dropoffLocation, displayedDriverLocation, location, hidePickupAndUserLocation]);
 
   // Handle region change to enforce zoom limits
@@ -2483,35 +2388,34 @@ const handleRideAccepted = (data: any) => {
     
     try {
       console.log(`Fetching suggestions for: ${query}`);
-      // Google Autocomplete doesn't cache well by query string due to session tokens, but we can keep simple cache
-      // const cache = type === 'pickup' ? pickupCache : dropoffCache;
-      // if (cache[query]) {
-      //   return cache[query];
-      // }
+      const cache = type === 'pickup' ? pickupCache : dropoffCache;
+      if (cache[query]) {
+        console.log(`Returning cached suggestions for: ${query}`);
+        return cache[query];
+      }
      
       if (type === 'pickup') setPickupLoading(true);
       else setDropoffLoading(true);
      
       setSuggestionsError(null);
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&key=${GOOGLE_MAP_KEY}&components=country:in`;
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&countrycodes=IN`;
       console.log(`API URL: ${url}`);
       const response = await fetch(url, {
         headers: { 'User-Agent': 'EAZYGOApp/1.0' },
       });
      
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
-      
-      if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') throw new Error(`API Error: ${data.status}`);
+      if (!Array.isArray(data)) throw new Error('Invalid response format');
      
-      const suggestions: SuggestionType[] = (data.predictions || []).map((item: any) => ({
-        id: item.place_id,
-        name: item.structured_formatting.main_text,
-        address: item.structured_formatting.secondary_text,
-        lat: '', // Will fetch details on select
-        lon: '', // Will fetch details on select
-        type: 'google_place',
+      const suggestions: SuggestionType[] = data.map((item: any) => ({
+        id: item.place_id || `${item.lat}-${item.lon}`,
+        name: item.display_name,
+        address: extractAddress(item),
+        lat: item.lat,
+        lon: item.lon,
+        type: item.type || 'unknown',
         importance: item.importance || 0,
-        place_id: item.place_id
       }));
       
       if (location) {
@@ -2541,22 +2445,6 @@ const handleRideAccepted = (data: any) => {
     }
   };
   
-  // Helper to get Place Details (Lat/Lng) from Google
-  const getPlaceDetails = async (placeId: string) => {
-    try {
-      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry&key=${GOOGLE_MAP_KEY}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.result && data.result.geometry) {
-        return {
-          lat: data.result.geometry.location.lat,
-          lng: data.result.geometry.location.lng
-        };
-      }
-    } catch (e) { console.error(e); }
-    return null;
-  };
-
   // Extract address
   const extractAddress = (item: any): string => {
     if (item.address) {
@@ -2624,7 +2512,7 @@ const handleRideAccepted = (data: any) => {
   };
   
   // Select pickup suggestion
-  const selectPickupSuggestion = async (suggestion: SuggestionType) => {
+  const selectPickupSuggestion = (suggestion: SuggestionType) => {
     if (!isMountedRef.current) return;
     
     if (suggestion.type === 'current') {
@@ -2634,28 +2522,16 @@ const handleRideAccepted = (data: any) => {
     }
   
     propHandlePickupChange(suggestion.name);
-    
-    let lat = parseFloat(suggestion.lat);
-    let lon = parseFloat(suggestion.lon);
-
-    if (isNaN(lat) || isNaN(lon)) {
-        const details = await getPlaceDetails(suggestion.id);
-        if (details) {
-            lat = details.lat;
-            lon = details.lng;
-        }
-    }
-
-    const newPickupLocation = { latitude: lat, longitude: lon };
+    const newPickupLocation = { latitude: parseFloat(suggestion.lat), longitude: parseFloat(suggestion.lon) };
     setPickupLocation(newPickupLocation);
     setShowPickupSuggestions(false);
     setIsPickupCurrent(false);
     if (dropoffLocation) fetchRoute(newPickupLocation, dropoffLocation);
-    fetchNearbyDrivers(lat, lon);
+    fetchNearbyDrivers(parseFloat(suggestion.lat), parseFloat(suggestion.lon));
   };
   
   // Select dropoff suggestion
-  const selectDropoffSuggestion = async (suggestion: SuggestionType) => {
+  const selectDropoffSuggestion = (suggestion: SuggestionType) => {
     if (!isMountedRef.current) return;
     
     if (suggestion.type === 'current') {
@@ -2665,19 +2541,7 @@ const handleRideAccepted = (data: any) => {
     }
     
     propHandleDropoffChange(suggestion.name);
-    
-    let lat = parseFloat(suggestion.lat);
-    let lon = parseFloat(suggestion.lon);
-
-    if (isNaN(lat) || isNaN(lon)) {
-        const details = await getPlaceDetails(suggestion.id);
-        if (details) {
-            lat = details.lat;
-            lon = details.lng;
-        }
-    }
-
-    const newDropoffLocation = { latitude: lat, longitude: lon };
+    const newDropoffLocation = { latitude: parseFloat(suggestion.lat), longitude: parseFloat(suggestion.lon) };
     console.log("Setting dropoffLocation to:", newDropoffLocation);
     setDropoffLocation(newDropoffLocation);
     setShowDropoffSuggestions(false);
@@ -2794,7 +2658,7 @@ const handleRideAccepted = (data: any) => {
       return null;
     }
    
-    const distanceKm = parseFloat(distance.replace(/[^0-9.]/g, ''));
+    const distanceKm = parseFloat(distance);
     console.log('\n💰 PRICE CALCULATION DEBUG:');
     console.log(`📏 Distance: ${distanceKm}km`);
     console.log(`🚗 Vehicle Type: ${selectedRideType}`);
@@ -2940,7 +2804,7 @@ const handleRideAccepted = (data: any) => {
           lng: dropoffLocation.longitude,
           address: dropoff,
         },
-        vehicleType: selectedRideType,
+        vehicleType: selectedRideType.toLowerCase(),
         otp,
         estimatedPrice,
         distance: distance.replace(' km', ''),
@@ -2951,10 +2815,14 @@ const handleRideAccepted = (data: any) => {
         // FCM flags
         _fcmRequired: true,
         _sendFCM: true,
-        _notifyAllDrivers: true,
         _source: 'user_app',
         _timestamp: Date.now(),
       };
+
+      // ----------------------------------------------------------------
+      // ✅ CRITICAL DEBUG LOG: Verify the vehicleType is lowercase
+      console.log('📦 DEBUG: Sending ride data to backend:', JSON.stringify(rideData, null, 2));
+      // ----------------------------------------------------------------
 
       console.log('📦 Sending ride data with locations confirmed');
       
@@ -3142,12 +3010,9 @@ const handleRideAccepted = (data: any) => {
   
   // Handle phone call
   const handlePhoneCall = () => {
-    const mobile = acceptedDriverRef.current?.driverMobile || driverMobile;
-    if (mobile && mobile !== 'N/A') {
-      Linking.openURL(`tel:${mobile}`)
+    if (acceptedDriver && acceptedDriver.driverMobile) {
+      Linking.openURL(`tel:${acceptedDriver.driverMobile}`)
         .catch(err => console.error('Error opening phone dialer:', err));
-    } else {
-      Alert.alert("Contact Unavailable", "Driver's mobile number is not available.");
     }
   };
   
@@ -3159,9 +3024,6 @@ const handleRideAccepted = (data: any) => {
     if (item.type === 'current') {
       iconName = 'my-location';
       iconColor = '#4CAF50';
-    } else if (item.type === 'google_place') {
-      iconName = 'location-on';
-      iconColor = '#EA4335';
     } else if (item.type.includes('railway') || item.type.includes('station')) { 
       iconName = 'train'; 
       iconColor = '#3F51B5'; 
@@ -3211,15 +3073,13 @@ const handleRideAccepted = (data: any) => {
   // Reverse geocode
   const reverseGeocode = async (lat: number, lon: number): Promise<string | null> => {
     try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${GOOGLE_MAP_KEY}`;
+      const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1&countrycodes=IN`;
       const response = await fetch(url, {
         headers: { 'User-Agent': 'EAZYGOApp/1.0' },
       });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
-      if (data.status === 'OK' && data.results.length > 0) {
-        return data.results[0].formatted_address;
-      }
-      return null;
+      return data.display_name || null;
     } catch (error) {
       console.error('Reverse geocode error:', error);
       return null;
@@ -3353,87 +3213,77 @@ const handleRideAccepted = (data: any) => {
   const handleBillModalClose = async () => {
     if (!isMountedRef.current) return;
 
-    console.log('🔄 User dismissed bill. Processing payment and resetting app...');
+    // Close modal immediately
+    setShowBillModal(false);
 
-    try {
-      console.log('💳 Processing payment for ride:', currentRideIdRef.current);
-      const token = await AsyncStorage.getItem('authToken');
-      const backendUrl = getBackendUrl();
-      
-      // Call backend to process payment from user's wallet
-      await axios.post(`${backendUrl}/api/wallet/pay-ride`, {
-        rideId: currentRideIdRef.current,
-        amount: billDetails.charge,
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      console.log('✅ Payment processed successfully on backend.');
-      Alert.alert('Payment Successful', `₹${billDetails.charge} has been paid from your wallet.`);
-      
-      // Refresh wallet to get the new balance
-      await refreshWallet();
-      
-    } catch (error) {
-      console.error('❌ Payment failed:', error.response?.data?.message || error.message);
-      Alert.alert('Payment Failed', error.response?.data?.message || 'Could not process payment from wallet. Please check your balance.');
-    } finally {
-      // This block runs whether payment succeeded or failed, ensuring the app resets.
-      console.log('🧹 Resetting app to default state...');
+    // Reset all state in a batch to minimize renders
+    setRideStatus("idle");
+    setCurrentRideId(null);
+    setDriverId(null);
+    setDriverLocation(null);
+    setDisplayedDriverLocation(null);
+    setAcceptedDriver(null);
+    setPickupLocation(null);
+    setBookedPickupLocation(null);
+    setDropoffLocation(null);
+    setRouteCoords([]);
+    setDistance('');
+    setTravelTime('');
+    setEstimatedPrice(null);
+    setBookingOTP('');
+    setNearbyDrivers([]);
+    setNearbyDriversCount(0);
+    setShowOTPInput(false);
+    setShowLocationOverlay(true);
+    setDriverArrivedAlertShown(false);
+    setRideCompletedAlertShown(false);
+    setHasClosedSearching(false);
+    setTravelledKm(0);
+    setLastCoord(null);
+    setRealTimeNavigationActive(false);
+    setShowRouteDetailsModal(false);
+    setHidePickupAndUserLocation(false);
+    setIsBooking(false);
+    setLastPolylineUpdateLocation(null);
+    setSmoothRouteCoords([]);
+    setOtpVerifiedAlertShown(false);
 
-      // Close the modal
-      setShowBillModal(false);
+    // Reset input fields
+    propHandlePickupChange('');
+    propHandleDropoffChange('');
 
-      // Reset all ride-related state variables
-      setRideStatus("idle");
-      setCurrentRideId(null);
-      setDriverId(null);
-      setDriverLocation(null);
-      setDisplayedDriverLocation(null);
-      setAcceptedDriver(null);
-      setPickupLocation(null);
-      setBookedPickupLocation(null);
-      setDropoffLocation(null);
-      setRouteCoords([]);
-      setDistance('');
-      setTravelTime('');
-      setEstimatedPrice(null);
-      setBookingOTP('');
-      setNearbyDrivers([]);
-      setNearbyDriversCount(0);
-      setShowOTPInput(false);
-      setShowLocationOverlay(true);
-      setDriverArrivedAlertShown(false);
-      setRideCompletedAlertShown(false);
-      setHasClosedSearching(false);
-      setTravelledKm(0);
-      setLastCoord(null);
-      setRealTimeNavigationActive(false);
-      setShowRouteDetailsModal(false);
-      setHidePickupAndUserLocation(false);
-      setIsBooking(false);
-      setLastPolylineUpdateLocation(null);
-      setSmoothRouteCoords([]);
-      setOtpVerifiedAlertShown(false);
-
-      // Reset input fields
-      propHandlePickupChange('');
-      propHandleDropoffChange('');
-
-      // Force the map to completely remount, clearing all old markers and polylines
-      setMapKey(prevKey => prevKey + 1);
-
-      // Clear all ride data from storage
-      await clearRideStorage();
-
-      // Explicitly fetch nearby drivers for the fresh, default view
-      if (location) {
-        console.log('🔄 Fetching nearby drivers for default view.');
-        setTimeout(() => fetchNearbyDrivers(location.latitude, location.longitude), 500);
-      }
-
-      console.log('✅ App reset to fresh state. Ready for new booking.');
+    // ✅ Reset map zoom to default state and center on user location
+    if (mapRef.current && location) {
+      setTimeout(() => {
+        if (mapRef.current && location && isMountedRef.current) {
+          mapRef.current.animateToRegion({
+            latitude: location.latitude,
+            longitude: location.longitude,
+            latitudeDelta: 0.036, // 4km zoom level (default)
+            longitudeDelta: 0.036,
+          }, 1000);
+          console.log('✅ Map reset to default zoom and centered on user location');
+        }
+      }, 300);
     }
+
+    // Force map remount to clear all markers and routes instantly
+    setMapKey(prevKey => prevKey + 1);
+    
+    // Clear AsyncStorage in background (non-blocking)
+    AsyncStorage.multiRemove([
+      'currentRideId', 'acceptedDriver', 'rideStatus', 'bookedAt', 'bookingOTP',
+      'statusPollInterval', 'acceptanceTimeout', 'hidePickupAndUserLocation', 'ridePickup', 'rideDropoff',
+      'ridePickupLocation', 'bookedPickupLocation', 'rideDropoffLocation', 'rideRouteCoords', 'rideDistance',
+      'rideTravelTime', 'rideSelectedType', 'rideWantReturn', 'rideEstimatedPrice',
+      'driverLocation', 'driverLocationTimestamp'
+    ]).then(() => {
+      console.log('✅ AsyncStorage cleared - Ready for new booking');
+    }).catch(err => {
+      console.error('Error clearing AsyncStorage:', err);
+    });
+    
+    console.log('✅ App reset to fresh state - All ride data cleared');
   };
   
   // Debug monitoring for animation state
@@ -3476,14 +3326,7 @@ const handleRideAccepted = (data: any) => {
   };
   
   // Memoize route coordinates to prevent unnecessary re-renders
-  // Memoize route coordinates with stable key to prevent unnecessary polyline re-renders
   const memoizedRouteCoords = useMemo(() => routeCoords, [routeCoords]);
-
-  // Generate stable key for polyline to optimize re-rendering
-  const polylineKey = useMemo(() => {
-    if (!routeCoords || routeCoords.length === 0) return 'empty';
-    return `polyline-${routeCoords.length}-${routeCoords[0].latitude.toFixed(4)}`;
-  }, [routeCoords]);
   
   // Handle map interaction
   const handleMapInteraction = () => {
@@ -3555,16 +3398,14 @@ const handleRideAccepted = (data: any) => {
                   </Marker>
                 )}
                 
-                {/* Route polyline - Optimized with stable key for smooth updates */}
+                {/* Route polyline */}
                 {memoizedRouteCoords && memoizedRouteCoords.length > 0 && (
                   <Polyline
-                    key={polylineKey}
                     coordinates={memoizedRouteCoords}
                     strokeWidth={5}
                     strokeColor="#4CAF50"
                     lineCap="round"
                     lineJoin="round"
-                    geodesic={true}
                   />
                 )}
                 
@@ -3576,38 +3417,10 @@ const handleRideAccepted = (data: any) => {
                   
                   const isActiveDriver = currentRideId && acceptedDriver && driver.driverId === acceptedDriver.driverId;
 
-                  if (isActiveDriver) {
-                    return (
-                      <Marker.Animated
-                        key={`driver-${driver.driverId}`}
-                        ref={driverMarkerRef}
-                        coordinate={{
-                          latitude: driverAnimatedRegion.latitude,
-                          longitude: driverAnimatedRegion.longitude
-                        }}
-                        tracksViewChanges={false}
-                        anchor={{ x: 0.5, y: 0.5 }}
-                        flat={true}
-                      >
-                        <Animated.View
-                          style={[
-                            styles.driverMarkerContainer,
-                            { transform: [{ scale: pulseAnimation }] }
-                          ]}
-                        >
-                          <View style={[styles.vehicleIconContainer, { backgroundColor: "#FF6B00" }]}>
-                            {renderVehicleIcon(driver.vehicleType as "bike" | "taxi" | "port", 20, "#FFFFFF")}
-                          </View>
-                          <View style={styles.activeDriverPulse} />
-                        </Animated.View>
-                      </Marker.Animated>
-                    );
-                  }
-
                   return (
                     <Marker
                       key={`driver-${driver.driverId}`}
-                      ref={null}
+                      ref={isActiveDriver ? driverMarkerRef : null}
                       coordinate={isActiveDriver && displayedDriverLocation ? 
                         displayedDriverLocation : 
                         {
@@ -3975,6 +3788,7 @@ const handleRideAccepted = (data: any) => {
 );
 
   
+
 
 };
 

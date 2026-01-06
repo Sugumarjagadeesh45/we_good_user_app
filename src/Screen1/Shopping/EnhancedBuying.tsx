@@ -1,21 +1,21 @@
 // /Users/webasebrandings/Downloads/new-main/src/Screen1/Shopping/EnhancedBuying.tsx
 import React, { useState, useContext, useRef, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  Image, 
-  TouchableOpacity, 
-  Alert, 
-  ScrollView, 
-  Dimensions, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+  Dimensions,
   FlatList,
   Animated
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { CartContext } from './ShoppingContent';
-import { getImageUrl } from '../../../src/util/backendConfig';
+import { getImageUrl } from '../../util/backendConfig';
 
 const { width } = Dimensions.get('window');
 

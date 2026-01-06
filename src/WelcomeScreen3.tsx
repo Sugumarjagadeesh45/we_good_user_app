@@ -21,12 +21,10 @@ import { RootStackParamList } from '../App';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-const LOCAL_IP = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
-const LOCAL_PORT = '5001';
-const LOCAL_URL = `http://${LOCAL_IP}:${LOCAL_PORT}/api/auth`;
+const API_URL = 'https://backend-besafe.onrender.com/api/auth';
 
 const callBackend = async (endpoint: string, data: any, timeout = 5000) => {
-  return await axios.post(`${LOCAL_URL}${endpoint}`, data, { timeout });
+  return await axios.post(`${API_URL}${endpoint}`, data, { timeout });
 };
 
 const WelcomeScreen3 = () => {

@@ -12,7 +12,7 @@ import {
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation } from '@react-navigation/native';
 import { CartContext } from './ShoppingContent';
-import { getImageUrl } from '../../../src/util/backendConfig';
+import { getImageUrl } from '../../util/backendConfig';
 
 const EnhancedCart = () => {
   const navigation = useNavigation();
@@ -481,4 +481,3 @@ const styles = StyleSheet.create({
 });
 
 export default EnhancedCart;
-
