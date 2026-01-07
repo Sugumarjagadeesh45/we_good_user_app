@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 //  SOCKET CONFIGURATION (NGROK for Real Devices)
 // -----------------------------------------
 // Use ngrok URL for socket connections (driver/user location tracking)
-const SOCKET_URL = 'https://2175e392da42.ngrok-free.app';
+const SOCKET_URL = 'https://27a41765479f.ngrok-free.app';
 
 console.log('🔗 Connecting Socket to NGROK:', SOCKET_URL);
 
