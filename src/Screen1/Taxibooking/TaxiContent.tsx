@@ -3,8 +3,6 @@
 
 
 
-
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
@@ -42,6 +40,9 @@ import BikeIcon from '../../../assets001/bike.svg';
 import LorryIcon from '../../../assets001/lorry.svg';
 import TaxiIcon from '../../../assets001/taxi.svg';
 import SearchingAnimation from '../../constants/SearchingAnimation';
+import BillingAlert from '../../components/BillingAlert';
+import { useWallet } from '../../context/WalletContext';
+import RideTypeSelector from './RideTypeSelector';
 
 // Add this import at the top with your other imports
 import logo from '../../../assets/taxi.png'; 
@@ -207,114 +208,11 @@ const customMapStyle = [
   }
 ];
 
-// ✅ CORRECT: RideTypeSelector defined OUTSIDE and BEFORE TaxiContent
-const RideTypeSelector = ({ selectedRideType, setSelectedRideType, estimatedPrice, distance, dynamicPrices }) => {
-  const renderVehicleIcon = (type: string, size: number = 24, color: string = '#333333') => {
-    switch (type) {
-      case 'port':
-        return <LorryIcon width={size} height={size} fill={color} />;
-      case 'taxi':
-        return <TaxiIcon width={size} height={size} fill={color} />;
-      case 'bike':
-        return <BikeIcon width={size} height={size} fill={color} />;
-      default:
-        return <TaxiIcon width={size} height={size} fill={color} />;
-    }
-  };
-  return (
-    <View style={styles.rideTypeContainer}>
-      <TouchableOpacity
-        style={[
-          styles.rideTypeButton,
-          selectedRideType === 'port' && styles.selectedRideTypeButton,
-        ]}
-        onPress={() => setSelectedRideType('port')}
-        activeOpacity={0.7}
-      >
-        <View style={styles.rideIconContainer}>
-          {renderVehicleIcon('port', 24, selectedRideType === 'port' ? '#FFFFFF' : '#333333')}
-        </View>
-        <View style={styles.rideInfoContainer}>
-          <Text style={[
-            styles.rideTypeText,
-            selectedRideType === 'port' && styles.selectedRideTypeText,
-          ]}>CarGo Porter</Text>
-          <Text style={[
-            styles.rideDetailsText,
-            selectedRideType === 'port' && styles.selectedRideDetailsText,
-          ]}>Max 5 ton</Text>
-          <Text style={styles.ridePriceText}>
-            {dynamicPrices.port > 0 ? `₹${dynamicPrices.port}/km` : 'Loading...'}
-          </Text>
-        </View>
-        {selectedRideType === 'port' && (
-          <View style={styles.checkmarkContainer}>
-            <MaterialIcons name="check-circle" size={24} color="#FFFFFF" />
-          </View>
-        )}
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[
-          styles.rideTypeButton,
-          selectedRideType === 'taxi' && styles.selectedRideTypeButton,
-        ]}
-        onPress={() => setSelectedRideType('taxi')}
-        activeOpacity={0.7}
-      >
-        <View style={styles.rideIconContainer}>
-          {renderVehicleIcon('taxi', 24, selectedRideType === 'taxi' ? '#FFFFFF' : '#333333')}
-        </View>
-        <View style={styles.rideInfoContainer}>
-          <Text style={[
-            styles.rideTypeText,
-            selectedRideType === 'taxi' && styles.selectedRideTypeText,
-          ]}>Taxi</Text>
-          <Text style={[
-            styles.rideDetailsText,
-            selectedRideType === 'taxi' && styles.selectedRideDetailsText,
-          ]}>4 seats</Text>
-          <Text style={styles.ridePriceText}>
-            {dynamicPrices.taxi > 0 ? `₹${dynamicPrices.taxi}/km` : 'Loading...'}
-          </Text>
-        </View>
-        {selectedRideType === 'taxi' && (
-          <View style={styles.checkmarkContainer}>
-            <MaterialIcons name="check-circle" size={24} color="#FFFFFF" />
-          </View>
-        )}
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[
-          styles.rideTypeButton,
-          selectedRideType === 'bike' && styles.selectedRideTypeButton,
-        ]}
-        onPress={() => setSelectedRideType('bike')}
-        activeOpacity={0.7}
-      >
-        <View style={styles.rideIconContainer}>
-          {renderVehicleIcon('bike', 24, selectedRideType === 'bike' ? '#FFFFFF' : '#333333')}
-        </View>
-        <View style={styles.rideInfoContainer}>
-          <Text style={[
-            styles.rideTypeText,
-            selectedRideType === 'bike' && styles.selectedRideTypeText,
-          ]}>Motorcycle</Text>
-          <Text style={[
-            styles.rideDetailsText,
-            selectedRideType === 'bike' && styles.selectedRideDetailsText,
-          ]}>1 person</Text>
-          <Text style={styles.ridePriceText}>
-            {dynamicPrices.bike > 0 ? `₹${dynamicPrices.bike}/km` : 'Loading...'}
-          </Text>
-        </View>
-        {selectedRideType === 'bike' && (
-          <View style={styles.checkmarkContainer}>
-            <MaterialIcons name="check-circle" size={24} color="#FFFFFF" />
-          </View>
-        )}
-      </TouchableOpacity>
-    </View>
-  );
+// Helper to check validity of lat/long - ADD THIS AT THE TOP
+const isValidLatLng = (lat: any, lng: any) => {
+  return typeof lat === 'number' && typeof lng === 'number' &&
+         lat >= -90 && lat <= 90 &&
+         lng >= -180 && lng <= 180;
 };
 
 interface LocationType {
@@ -364,6 +262,7 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   handlePickupChange: propHandlePickupChange,
   handleDropoffChange: propHandleDropoffChange,
 }) => {
+  const { walletBalance, fetchWalletBalance, refreshWallet } = useWallet();
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const [selectedRideType, setSelectedRideType] = useState<string>('taxi');
   const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
@@ -413,13 +312,7 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   });
   const [showRideOptions, setShowRideOptions] = useState(false);
   const [showBillModal, setShowBillModal] = useState(false);
-  const [billDetails, setBillDetails] = useState({
-    distance: '0 km',
-    travelTime: '0 mins',
-    charge: 0,
-    driverName: '',
-    vehicleType: ''
-  });
+  const [billingData, setBillingData] = useState<any>(null);
   const [currentSpeed, setCurrentSpeed] = useState<number>(0);
   const [showPickupSelector, setShowPickupSelector] = useState(false);
   const [showDropoffSelector, setShowDropoffSelector] = useState(false);
@@ -956,7 +849,7 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
     
     // Set up interval for continuous location updates
     const intervalId = setInterval(() => {
-      if (isMountedRef.current && currentRideIdRef.current === rideId) {
+      if (isMountedRef.current && currentRideIdRef.current === rideId && rideStatusRef.current !== 'completed') {
         socket.emit('requestDriverLocation', { 
           rideId,
           driverId,
@@ -1056,7 +949,7 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
       socket.emit("requestNearbyDrivers", {
         latitude,
         longitude,
-        radius: currentRideId ? 20000 : 10000,
+        radius: 20000, // Always 20km to ensure visibility
         vehicleType: selectedRideType.toLowerCase(),
         requireLiveLocation: true
       });
@@ -1068,7 +961,7 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
         socket.emit("requestNearbyDrivers", {
           latitude,
           longitude,
-          radius: currentRideId ? 20000 : 10000,
+          radius: 20000, // Always 20km
           vehicleType: selectedRideType.toLowerCase(),
           requireLiveLocation: true
         });
@@ -1113,7 +1006,7 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
             driver.location.coordinates[1],
             driver.location.coordinates[0]
           );
-          return distance <= 10;
+          return distance <= 20; // Increased to 20km
         })
         .sort((a, b) => {
           const distA = calculateDistance(location.latitude, location.longitude, a.location.coordinates[1], a.location.coordinates[0]);
@@ -1209,20 +1102,28 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   useEffect(() => {
     if (!isMountedRef.current) return;
     
-    const handleConnect = async () => {
-      console.log("Socket connected");
-      setSocketConnected(true);
-      if (location) fetchNearbyDrivers(location.latitude, location.longitude);
-      try {
-        const userId = await AsyncStorage.getItem('userId');
-        if (userId) {
-          socket.emit('registerUser', { userId });
-          console.log('👤 User registered with socket:', userId);
-        }
-      } catch (error) {
-        console.error('Error registering user with socket:', error);
-      }
-    };
+// In the socket connection handler (around line 1320)
+const handleConnect = async () => {
+  console.log("Socket connected");
+  setSocketConnected(true);
+  
+  if (location) fetchNearbyDrivers(location.latitude, location.longitude);
+  
+  try {
+    // Try to get customerId first, then userId as fallback
+    let userId = await AsyncStorage.getItem('customerId');
+    if (!userId) {
+      userId = await AsyncStorage.getItem('userId');
+    }
+    
+    if (userId) {
+      socket.emit('registerUser', { userId });
+      console.log('👤 User registered with socket:', userId);
+    }
+  } catch (error) {
+    console.error('Error registering user with socket:', error);
+  }
+};
    
     const handleDisconnect = () => { 
       console.log("Socket disconnected"); 
@@ -1311,100 +1212,107 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
     }
   }, [rideStatus, displayedDriverLocation, dropoffLocation, realTimeNavigationActive]);
   
+
+  
   // Update OTP verified handler to start continuous location updates
-  useEffect(() => {
-    if (!isMountedRef.current) return;
+const handleOtpVerified = useCallback(async (data: any) => {
+  if (!isMountedRef.current) return;
+  
+  console.log('✅ OTP Verified by driver - ACTIVATING REAL-TIME NAVIGATION:', data);
+  
+  // Prevent duplicate execution
+  if (otpVerifiedAlertShownRef.current) {
+    console.log('⚠️ OTP already verified, ignoring duplicate event');
+    return;
+  }
+  
+  if (data.rideId === currentRideIdRef.current) {
+    console.log('🎯 OTP Verified for current ride!');
     
-    const handleOtpVerified = async (data: any) => {
-      console.log('✅ OTP Verified by driver - ACTIVATING REAL-TIME NAVIGATION:', data);
+    // 🔴 CRITICAL: Update all states
+    setRideStatus("started");
+    setRealTimeNavigationActive(true);
+    setShowLocationOverlay(false);
+    setHidePickupAndUserLocation(true);
+    setOtpVerifiedAlertShown(true);
+    setFollowDriver(true);
+    setShowOTPInput(false);
+    
+    // Update refs
+    rideStatusRef.current = "started";
+    realTimeNavigationActiveRef.current = true;
+    otpVerifiedAlertShownRef.current = true;
+
+    // Store updated status
+    await AsyncStorage.setItem('rideStatus', 'started');
+    await AsyncStorage.setItem('hidePickupAndUserLocation', 'true');
+    
+    // Show professional OTP verified alert (only once)
+    Alert.alert(
+      "OTP Verified Successfully!",
+      "Your ride is starting now.",
+      [{ 
+        text: "OK", 
+        onPress: () => console.log("OTP alert closed") 
+      }],
+      { 
+        cancelable: true,
+        onDismiss: () => console.log("OTP alert dismissed")
+      }
+    );
+    
+    console.log('🎯 REAL-TIME NAVIGATION ACTIVATED');
+    
+    // Start continuous driver location updates
+    if (acceptedDriverRef.current && acceptedDriverRef.current.driverId) {
+      console.log('🔄 Starting continuous driver location updates after OTP verification');
       
-      if (data.rideId === currentRideId && !otpVerifiedAlertShownRef.current) {
-        setRideStatus("started");
-        setRealTimeNavigationActive(true);
-        setShowLocationOverlay(false);
-        setHidePickupAndUserLocation(true);
-        setOtpVerifiedAlertShown(true);
-        setFollowDriver(true);
-        
-        // 🔴 CRITICAL: Start continuous driver location updates
-        if (acceptedDriver && acceptedDriver.driverId) {
-          console.log('🔄 Starting continuous driver location updates after OTP verification');
-          
-          // Request immediate location
+      // Request immediate location
+      socket.emit('requestDriverLocation', { 
+        rideId: currentRideIdRef.current,
+        driverId: acceptedDriverRef.current.driverId,
+        priority: 'high'
+      });
+      
+      // Set up polling for driver location
+      const pollInterval = setInterval(() => {
+        if (currentRideIdRef.current && acceptedDriverRef.current && isMountedRef.current) {
           socket.emit('requestDriverLocation', { 
-            rideId: currentRideId,
-            driverId: acceptedDriver.driverId,
-            priority: 'high'
+            rideId: currentRideIdRef.current,
+            driverId: acceptedDriverRef.current.driverId,
+            priority: 'medium'
           });
-          
-          // Set up polling for driver location (backup)
-          const pollInterval = setInterval(() => {
-            if (currentRideId && acceptedDriver && isMountedRef.current) {
-              socket.emit('requestDriverLocation', { 
-                rideId: currentRideId,
-                driverId: acceptedDriver.driverId,
-                priority: 'medium'
-              });
-            } else {
-              clearInterval(pollInterval);
-            }
-          }, 3000);
-          
-          // Store interval for cleanup
-          AsyncStorage.setItem('driverLocationPollInterval', pollInterval.toString());
+        } else {
+          clearInterval(pollInterval);
         }
+      }, 3000);
+      
+      // Store interval ID
+      AsyncStorage.setItem('driverLocationPollInterval', pollInterval.toString());
+    }
+    
+    // Fetch initial live route
+    if (driverLocationRef.current && dropoffLocationRef.current) {
+      console.log('🚀 FETCHING INITIAL LIVE ROUTE');
+      const routeData = await fetchRealTimeRoute(driverLocationRef.current, dropoffLocationRef.current);
+      if (routeData) {
+        console.log(`✅ Initial live route: ${routeData.coords.length} points`);
+        setRouteCoords(routeData.coords);
+        setDistance(routeData.distance + " km");
+        setTravelTime(routeData.time + " mins");
+        await AsyncStorage.setItem("rideRouteCoords", JSON.stringify(routeData.coords));
         
-        // Show professional OTP verified alert
-        Alert.alert(
-          "OTP Verified Successfully!",
-          "Your ride is starting now.",
-          [{ text: "OK", onPress: () => console.log("OTP alert closed") }],
-          { 
-            cancelable: true,
-            onDismiss: () => console.log("OTP alert dismissed")
-          }
-        );
-        
-        // Hide OTP input after verification
-        setShowOTPInput(false);
-        
-        await AsyncStorage.setItem('hidePickupAndUserLocation', 'true');
-        
-        console.log('🎯 REAL-TIME NAVIGATION ACTIVATED');
-        
-        // Fetch initial live route immediately
-        if (driverLocation && dropoffLocation) {
-          console.log('🚀 FETCHING INITIAL LIVE ROUTE');
-          const routeData = await fetchRealTimeRoute(driverLocation, dropoffLocation);
-          if (routeData) {
-            console.log(`✅ Initial live route: ${routeData.coords.length} points`);
-            setRouteCoords(routeData.coords);
-            setDistance(routeData.distance + " km");
-            setTravelTime(routeData.time + " mins");
-            await AsyncStorage.setItem("rideRouteCoords", JSON.stringify(routeData.coords));
-            
-            // Fit map to show driver and route
-            if (mapRef.current && driverLocation) {
-              setTimeout(() => {
-                fitMapToMarkers();
-              }, 100);
-            }
-          }
+        // Fit map to show driver and route
+        if (mapRef.current && driverLocationRef.current) {
+          setTimeout(() => {
+            fitMapToMarkers();
+          }, 100);
         }
       }
-    };
-    
-    socket.on("otpVerified", handleOtpVerified);
-    socket.on("rideStarted", handleOtpVerified);
-    socket.on("driverStartedRide", handleOtpVerified);
-    
-    return () => {
-      socket.off("otpVerified", handleOtpVerified);
-      socket.off("rideStarted", handleOtpVerified);
-      socket.off("driverStartedRide", handleOtpVerified);
-    };
-  }, [currentRideId, driverLocation, dropoffLocation, acceptedDriver]);
-  
+    }
+  }
+}, []);
+
   // Driver arrival polling
   useEffect(() => {
     if (!isMountedRef.current) return;
@@ -1438,46 +1346,6 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   
 
   
-  useEffect(() => {
-  if (!isMountedRef.current) return;
-  
-  const handleRideCompleted = (data) => {
-    console.log('🎉 Ride completed in user app:', data);
-    setBillDetails({
-      distance: data.distance || '0 km',
-      travelTime: data.travelTime || '0 mins',
-      charge: data.charge || 0,
-      driverName: data.driverName || 'Driver',
-      vehicleType: data.vehicleType || 'bike'
-    });
-    setShowBillModal(true);
-  };
-  
-  const handleBillAlert = (data) => {
-    console.log('💰 Bill alert received:', data);
-    if (data.type === 'bill' && data.showBill) {
-      setBillDetails({
-        distance: data.distance || '0 km',
-        travelTime: data.travelTime || '0 mins',
-        charge: data.fare || 0,
-        driverName: data.driverName || 'Driver',
-        vehicleType: data.vehicleType || 'bike'
-      });
-      setShowBillModal(true);
-    }
-  };
-  
-  socket.on("rideCompleted", handleRideCompleted);
-  socket.on("billAlert", handleBillAlert);
-  
-  return () => {
-    socket.off("rideCompleted", handleRideCompleted);
-    socket.off("billAlert", handleBillAlert);
-  };
-}, []);
-
-
-
   // Ride status update handler
   useEffect(() => {
     if (!isMountedRef.current) return;
@@ -1553,8 +1421,9 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   }, [bookedAt]);
   
 
-  // Process ride acceptance - FIXED VERSION
-const processRideAcceptance = useCallback((data: any) => {
+
+  
+  const processRideAcceptance = useCallback((data: any) => {
   if (!isMountedRef.current) return;
   
   console.log('🎯 PROCESSING RIDE ACCEPTANCE:', data.rideId, data.driverId);
@@ -1574,19 +1443,25 @@ const processRideAcceptance = useCallback((data: any) => {
   setRideStatus("onTheWay");
   setDriverId(data.driverId);
   setDriverName(data.driverName || 'Driver');
-  setDriverMobile(data.driverMobile || 'N/A');
+  // ✅ ROBUST: Check for all possible phone number keys from backend notes
+  const mobile = data.driverPhone || data.driverMobile || data.phone || data.phoneNumber || 'N/A';
+  setDriverMobile(mobile);
   setCurrentRideId(data.rideId);
 
   const acceptedDriverData: DriverType = {
     driverId: data.driverId,
     name: data.driverName || 'Driver',
-    driverMobile: data.driverMobile || 'N/A',
+    driverMobile: mobile ||data.driverPhone || data.driverMobile || data.phone || data.phoneNumber,
     location: {
       // FIX: Always use driver's current location, NOT pickup location
       coordinates: [data.driverLng || data.lng || 0, data.driverLat || data.lat || 0]
     },
-      vehicleType: (data.vehicleType || selectedRideType).toLowerCase(),
-    status: "onTheWay"
+    vehicleType: data.vehicleType || selectedRideType,
+    status: "onTheWay",
+    // ✅ ADDED: Populate additional driver details from backend notes
+    vehicleNumber: data.driverVehicleNumber || '',
+    rating: data.driverRating || 0,
+    photoUrl: data.driverPhoto ? `${getBackendUrl()}${data.driverPhoto}` : '',
   };
 
   console.log('👨‍💼 Setting accepted driver:', acceptedDriverData);
@@ -1670,196 +1545,182 @@ const processRideAcceptance = useCallback((data: any) => {
   }, 100);
 }, [selectedRideType, pickupLocation, dropoffLocation, routeCoords]);
 
-
   // Recover ride data on component mount
-  useEffect(() => {
+  const recoverRideData = useCallback(async () => {
     if (!isMountedRef.current) return;
     
-    const recoverRideData = async () => {
-      try {
-        const savedRideId = await AsyncStorage.getItem('currentRideId');
-        const savedDriverData = await AsyncStorage.getItem('acceptedDriver');
-        const savedRideStatus = await AsyncStorage.getItem('rideStatus');
-        const savedBookedAt = await AsyncStorage.getItem('bookedAt');
-        const savedBookingOTP = await AsyncStorage.getItem('bookingOTP');
-        const savedPickup = await AsyncStorage.getItem('ridePickup');
-        const savedDropoff = await AsyncStorage.getItem('rideDropoff');
-        const savedPickupLoc = await AsyncStorage.getItem('ridePickupLocation');
-        const savedBookedPickupLoc = await AsyncStorage.getItem('bookedPickupLocation');
-        const savedDropoffLoc = await AsyncStorage.getItem('rideDropoffLocation');
-        const savedRoute = await AsyncStorage.getItem('rideRouteCoords');
-        const savedDist = await AsyncStorage.getItem('rideDistance');
-        const savedTime = await AsyncStorage.getItem('rideTravelTime');
-        const savedType = await AsyncStorage.getItem('rideSelectedType');
-        const savedReturn = await AsyncStorage.getItem('rideWantReturn');
-        const savedPrice = await AsyncStorage.getItem('rideEstimatedPrice');
-        const savedHidePickupUser = await AsyncStorage.getItem('hidePickupAndUserLocation');
-        const savedDriverLocation = await AsyncStorage.getItem('driverLocation');
+    try {
+      const savedRideId = await AsyncStorage.getItem('currentRideId');
+      const savedDriverData = await AsyncStorage.getItem('acceptedDriver');
+      const savedRideStatus = await AsyncStorage.getItem('rideStatus');
+      const savedBookedAt = await AsyncStorage.getItem('bookedAt');
+      const savedBookingOTP = await AsyncStorage.getItem('bookingOTP');
+      const savedPickup = await AsyncStorage.getItem('ridePickup');
+      const savedDropoff = await AsyncStorage.getItem('rideDropoff');
+      const savedPickupLoc = await AsyncStorage.getItem('ridePickupLocation');
+      const savedBookedPickupLoc = await AsyncStorage.getItem('bookedPickupLocation');
+      const savedDropoffLoc = await AsyncStorage.getItem('rideDropoffLocation');
+      const savedRoute = await AsyncStorage.getItem('rideRouteCoords');
+      const savedDist = await AsyncStorage.getItem('rideDistance');
+      const savedTime = await AsyncStorage.getItem('rideTravelTime');
+      const savedType = await AsyncStorage.getItem('rideSelectedType');
+      const savedReturn = await AsyncStorage.getItem('rideWantReturn');
+      const savedPrice = await AsyncStorage.getItem('rideEstimatedPrice');
+      const savedHidePickupUser = await AsyncStorage.getItem('hidePickupAndUserLocation');
+      const savedDriverLocation = await AsyncStorage.getItem('driverLocation');
+     
+      if (savedRideId) {
+        console.log('🔄 Recovering ride data from storage:', savedRideId);
+        setCurrentRideId(savedRideId);
+        currentRideIdRef.current = savedRideId;
        
-        if (savedRideId) {
-          console.log('🔄 Recovering ride data from storage:', savedRideId);
-          setCurrentRideId(savedRideId);
-         
-          if (savedRideStatus) {
-            const status = savedRideStatus as any;
-            setRideStatus(status);
-            
-            if (status === "started") {
-              setRealTimeNavigationActive(true);
-              setShowLocationOverlay(false);
-              setFollowDriver(true);
-              console.log('🎯 Restored real-time navigation state');
-            }
-            
-            if (status === 'searching') {
-              setShowSearchingPopup(false);
-              setHasClosedSearching(true);
-              setShowOTPInput(true);
-            }
+        if (savedRideStatus) {
+          const status = savedRideStatus as any;
+          setRideStatus(status);
+          rideStatusRef.current = status;
+          
+          if (status === "started") {
+            setRealTimeNavigationActive(true);
+            setShowLocationOverlay(false);
+            setFollowDriver(true);
+            setOtpVerifiedAlertShown(true);
+            console.log('🎯 Restored real-time navigation state');
           }
           
-          if (savedHidePickupUser === 'true') {
-            setHidePickupAndUserLocation(true);
+          if (status === 'searching') {
+            setShowSearchingPopup(false);
+            setHasClosedSearching(true);
+            setShowOTPInput(true);
           }
-          
-          if (savedBookingOTP) {
-            setBookingOTP(savedBookingOTP);
-          }
-          if (savedBookedAt) {
-            setBookedAt(new Date(savedBookedAt));
-          }
-         
-          if (savedDriverData) {
-            const driverData = JSON.parse(savedDriverData);
-            setAcceptedDriver(driverData);
-            setDriverName(driverData.name);
-            setDriverMobile(driverData.driverMobile);
-            
-           
-            
-            if (savedDriverLocation) {
-  try {
-    const driverLoc = JSON.parse(savedDriverLocation);
-    if (isValidLatLng(driverLoc?.latitude, driverLoc?.longitude)) {
-      setDriverLocation(driverLoc);
-      setDisplayedDriverLocation(driverLoc);
-      console.log('📍 Restored driver location (valid):', driverLoc);
-    } else {
-      console.warn('⚠️ Saved driverLocation invalid — ignoring and requesting live update');
-      AsyncStorage.removeItem('driverLocation');
-      socket.emit('requestDriverLocation', { rideId: currentRideId, driverId: driverData.driverId, priority: 'high' });
-    }
-  } catch (e) {
-    console.error('❌ Error parsing savedDriverLocation:', e);
-  }
-} else if (driverData.location?.coordinates) {
-  const driverLoc = {
-    latitude: driverData.location.coordinates[1],
-    longitude: driverData.location.coordinates[0]
-  };
-  if (isValidLatLng(driverLoc.latitude, driverLoc.longitude)) {
-    setDriverLocation(driverLoc);
-    setDisplayedDriverLocation(driverLoc);
-    console.log('📍 Using driver data location (valid):', driverLoc);
-  } else {
-    console.warn('⚠️ DriverData location invalid — requesting live update');
-    socket.emit('requestDriverLocation', { rideId: currentRideId, driverId: driverData.driverId, priority: 'high' });
-  }
-}
-
-
-
-           
-            if (savedRideStatus === 'onTheWay') {
-              setShowOTPInput(true);
-            } else if (savedRideStatus === 'arrived') {
-              setShowOTPInput(true);
-            } else if (savedRideStatus === 'started') {
-              setShowOTPInput(false);
-              setRealTimeNavigationActive(true);
-              setShowLocationOverlay(false);
-              setFollowDriver(true);
-            } else if (savedRideStatus === 'searching') {
-              const bookedTime = savedBookedAt ? new Date(savedBookedAt) : new Date();
-              setBookedAt(bookedTime);
-              
-              setShowSearchingPopup(false);
-              setHasClosedSearching(true);
-              setShowOTPInput(true);
-              
-              const pollInterval = setInterval(() => {
-                if (savedRideId && isMountedRef.current) {
-                  socket.emit('getRideStatus', { rideId: savedRideId });
-                }
-              }, 5000);
-              AsyncStorage.setItem('statusPollInterval', pollInterval.toString());
-             
-              const acceptanceTimeout = setTimeout(() => {
-                if (savedRideStatus === "searching") {
-                  Alert.alert(
-                    "No Driver Available",
-                    "No driver has accepted your ride yet. Please try again or wait longer.",
-                    [{ text: "OK", onPress: () => setRideStatus("idle") }]
-                  );
-                }
-              }, 60000);
-              AsyncStorage.setItem('acceptanceTimeout', acceptanceTimeout.toString());
-            }
-          }
-         
-          if (savedPickup) {
-            propHandlePickupChange(savedPickup);
-          }
-          if (savedDropoff) {
-            propHandleDropoffChange(savedDropoff);
-          }
-          
-          if (savedPickupLoc) {
-            const pickupLoc = JSON.parse(savedPickupLoc);
-            setPickupLocation(pickupLoc);
-            console.log('📍 Restored pickup location:', pickupLoc);
-          }
-          
-          if (savedBookedPickupLoc) {
-            const bookedPickupLoc = JSON.parse(savedBookedPickupLoc);
-            setBookedPickupLocation(bookedPickupLoc);
-            console.log('📍 Restored booked pickup location:', bookedPickupLoc);
-          }
-          
-          if (savedDropoffLoc) {
-            const dropoffLoc = JSON.parse(savedDropoffLoc);
-            setDropoffLocation(dropoffLoc);
-            console.log('📍 Restored dropoff location:', dropoffLoc);
-          }
-          
-          if (savedRoute) {
-            const restoredRoute = JSON.parse(savedRoute);
-            console.log('🔄 Restored route with', restoredRoute.length, 'coordinates');
-            setRouteCoords(restoredRoute);
-            
-            setTimeout(() => {
-              if (mapRef.current && isMountedRef.current) {
-                fitMapToMarkers();
-              }
-            }, 1000);
-          }
-          
-          if (savedDist) setDistance(savedDist);
-          if (savedTime) setTravelTime(savedTime);
-          if (savedType) setSelectedRideType(savedType);
-          if (savedReturn) setWantReturn(savedReturn === 'true');
-          if (savedPrice) setEstimatedPrice(parseFloat(savedPrice));
-         
-          socket.emit('getRideStatus', { rideId: savedRideId });
-          socket.emit('requestDriverLocation', { rideId: savedRideId });
         }
-      } catch (error) {
-        console.error('Error recovering ride data:', error);
+        
+        if (savedHidePickupUser === 'true') {
+          setHidePickupAndUserLocation(true);
+        }
+        
+        if (savedBookingOTP) {
+          setBookingOTP(savedBookingOTP);
+        }
+        if (savedBookedAt) {
+          setBookedAt(new Date(savedBookedAt));
+        }
+       
+        if (savedDriverData) {
+          const driverData = JSON.parse(savedDriverData);
+          setAcceptedDriver(driverData);
+          acceptedDriverRef.current = driverData;
+          setDriverName(driverData.name);
+          setDriverMobile(driverData.driverMobile);
+          
+          // FIXED: Use isValidLatLng function properly
+          if (savedDriverLocation) {
+            try {
+              const driverLoc = JSON.parse(savedDriverLocation);
+              if (isValidLatLng(driverLoc?.latitude, driverLoc?.longitude)) {
+                setDriverLocation(driverLoc);
+                setDisplayedDriverLocation(driverLoc);
+                driverLocationRef.current = driverLoc;
+                displayedDriverLocationRef.current = driverLoc;
+                console.log('📍 Restored driver location (valid):', driverLoc);
+              } else {
+                console.warn('⚠️ Saved driverLocation invalid — requesting live update');
+                AsyncStorage.removeItem('driverLocation');
+                if (driverData.driverId) {
+                  socket.emit('requestDriverLocation', { 
+                    rideId: savedRideId, 
+                    driverId: driverData.driverId, 
+                    priority: 'high' 
+                  });
+                }
+              }
+            } catch (e) {
+              console.error('❌ Error parsing savedDriverLocation:', e);
+            }
+          } else if (driverData.location?.coordinates) {
+            const driverLoc = {
+              latitude: driverData.location.coordinates[1],
+              longitude: driverData.location.coordinates[0]
+            };
+            if (isValidLatLng(driverLoc.latitude, driverLoc.longitude)) {
+              setDriverLocation(driverLoc);
+              setDisplayedDriverLocation(driverLoc);
+              driverLocationRef.current = driverLoc;
+              displayedDriverLocationRef.current = driverLoc;
+              console.log('📍 Using driver data location (valid):', driverLoc);
+            } else {
+              console.warn('⚠️ DriverData location invalid — requesting live update');
+              if (driverData.driverId) {
+                socket.emit('requestDriverLocation', { 
+                  rideId: savedRideId, 
+                  driverId: driverData.driverId, 
+                  priority: 'high' 
+                });
+              }
+            }
+          }
+          
+          // Restore OTP input state based on ride status
+          if (savedRideStatus === 'onTheWay' || savedRideStatus === 'arrived') {
+            setShowOTPInput(true);
+          } else if (savedRideStatus === 'started') {
+            setShowOTPInput(false);
+          }
+        }
+       
+        if (savedPickup) {
+          propHandlePickupChange(savedPickup);
+        }
+        if (savedDropoff) {
+          propHandleDropoffChange(savedDropoff);
+        }
+        
+        if (savedPickupLoc) {
+          const pickupLoc = JSON.parse(savedPickupLoc);
+          setPickupLocation(pickupLoc);
+          console.log('📍 Restored pickup location:', pickupLoc);
+        }
+        
+        if (savedBookedPickupLoc) {
+          const bookedPickupLoc = JSON.parse(savedBookedPickupLoc);
+          setBookedPickupLocation(bookedPickupLoc);
+          console.log('📍 Restored booked pickup location:', bookedPickupLoc);
+        }
+        
+        if (savedDropoffLoc) {
+          const dropoffLoc = JSON.parse(savedDropoffLoc);
+          setDropoffLocation(dropoffLoc);
+          console.log('📍 Restored dropoff location:', dropoffLoc);
+        }
+        
+        if (savedRoute) {
+          const restoredRoute = JSON.parse(savedRoute);
+          console.log('🔄 Restored route with', restoredRoute.length, 'coordinates');
+          setRouteCoords(restoredRoute);
+          
+          setTimeout(() => {
+            if (mapRef.current && isMountedRef.current) {
+              fitMapToMarkers();
+            }
+          }, 1000);
+        }
+        
+        if (savedDist) setDistance(savedDist);
+        if (savedTime) setTravelTime(savedTime);
+        if (savedType) setSelectedRideType(savedType);
+        if (savedReturn) setWantReturn(savedReturn === 'true');
+        if (savedPrice) setEstimatedPrice(parseFloat(savedPrice));
+       
+        socket.emit('getRideStatus', { rideId: savedRideId });
+        socket.emit('requestDriverLocation', { rideId: savedRideId });
       }
-    };
-    
-    recoverRideData();
+    } catch (error) {
+      console.error('Error recovering ride data:', error);
+    }
   }, [propHandlePickupChange, propHandleDropoffChange]);
+
+  useEffect(() => {
+    recoverRideData();
+  }, [recoverRideData]);
   
   // Save ride status to AsyncStorage
   useEffect(() => {
@@ -1930,37 +1791,43 @@ const processRideAcceptance = useCallback((data: any) => {
     
     console.log('🎯 Setting up GLOBAL ride acceptance listener');
     
- 
-    // Update the rideAccepted handler to log and validate location data
-const handleRideAccepted = (data: any) => {
-  console.log('🚨 ===== USER APP: RIDE ACCEPTED ====');
-  console.log('📦 Acceptance data:', {
-    rideId: data.rideId,
-    driverId: data.driverId,
-    driverName: data.driverName,
-    // Log location data specifically
-    driverLat: data.driverLat || data.lat,
-    driverLng: data.driverLng || data.lng,
-    // Check for pickup location separately
-    pickupLat: data.pickup?.lat,
-    pickupLng: data.pickup?.lng,
-    // All available keys
-    allKeys: Object.keys(data)
-  });
-  console.log('🚨 ===== END ACCEPTANCE DATA ====');
-  
-  // Validate that we have driver location, not pickup location
-  if (data.pickup && data.driverLat === undefined && data.lat === undefined) {
-    console.warn('⚠️ WARNING: No driver location in acceptance data, only pickup location!');
-    console.warn('This will cause driver marker to appear at pickup instead of actual location');
-  }
-  
-  processRideAcceptance(data);
-};
+    const handleRideAccepted = (data: any) => {
+      console.log('🚨 ===== USER APP: RIDE ACCEPTED ====');
+      console.log('📦 Acceptance data:', {
+        rideId: data.rideId,
+        driverId: data.driverId,
+        driverName: data.driverName,
+        // Log location data specifically
+        driverLat: data.driverLat || data.lat,
+        driverLng: data.driverLng || data.lng,
+        // Check for pickup location separately
+        pickupLat: data.pickup?.lat,
+        pickupLng: data.pickup?.lng,
+        // All available keys
+        allKeys: Object.keys(data)
+      });
+      console.log('🚨 ===== END ACCEPTANCE DATA ====');
+      
+      // Validate that we have driver location, not pickup location
+      if (data.pickup && data.driverLat === undefined && data.lat === undefined) {
+        console.warn('⚠️ WARNING: No driver location in acceptance data, only pickup location!');
+        console.warn('This will cause driver marker to appear at pickup instead of actual location');
+      }
+      
+      processRideAcceptance(data);
+    };
+    
+    // Also listen for direct rideStatusUpdate events that might contain driver info
+    const handleRideStatusUpdate = (data: any) => {
+       // Relaxed condition: Accept if driverId exists and status is not searching/cancelled
+       // FIX: Use currentRideIdRef.current to avoid stale closure
+       if (data.rideId === currentRideIdRef.current && data.driverId && data.status !== 'searching' && data.status !== 'cancelled') {
+           console.log('📋 Ride status update with driver info received:', data);
+           processRideAcceptance(data);
+       }
+    };
 
-   
-    socket.on("rideAccepted", handleRideAccepted);
-    socket.on("rideAcceptedBroadcast", async (data) => {
+    const handleRideAcceptedBroadcast = async (data) => {
       try {
         const userId = await AsyncStorage.getItem('userId');
         if (data.targetUserId === userId) {
@@ -1969,11 +1836,16 @@ const handleRideAccepted = (data: any) => {
       } catch (error) {
         console.error('Error checking user ID:', error);
       }
-    });
+    };
+   
+    socket.on("rideAccepted", handleRideAccepted);
+    socket.on("rideAcceptedBroadcast", handleRideAcceptedBroadcast);
+    socket.on("rideStatusUpdate", handleRideStatusUpdate);
    
     return () => {
       socket.off("rideAccepted", handleRideAccepted);
-      socket.off("rideAcceptedBroadcast", handleRideAccepted);
+      socket.off("rideAcceptedBroadcast", handleRideAcceptedBroadcast);
+      socket.off("rideStatusUpdate", handleRideStatusUpdate);
     };
   }, [processRideAcceptance]);
   
@@ -1992,7 +1864,7 @@ const handleRideAccepted = (data: any) => {
    
     const handleRideStatusResponse = (data: any) => {
       console.log('📋 Ride status received:', data);
-      if (data.driverId) {
+      if (data && data.driverId) {
         processRideAcceptance(data);
       }
     };
@@ -2011,7 +1883,7 @@ const handleRideAccepted = (data: any) => {
       socket.off("rideStatusResponse", handleRideStatusResponse);
       socket.off("backupRideAccepted", handleBackupRideAccepted);
     };
-  }, [selectedRideType]);
+  }, [processRideAcceptance]);
   
   // Comprehensive socket debugger
   useEffect(() => {
@@ -2063,12 +1935,17 @@ const handleRideAccepted = (data: any) => {
   // User location tracking
   const sendUserLocationUpdate = useCallback(async (latitude, longitude) => {
     try {
-      const userId = await AsyncStorage.getItem('userId');
+      // Use customerId if available, otherwise userId
+      let userId = await AsyncStorage.getItem('customerId');
+      if (!userId) {
+        userId = await AsyncStorage.getItem('userId');
+      }
+      
       if (!userId || !currentRideId) {
         console.log('❌ Cannot send location: Missing userId or rideId');
         return;
       }
-     
+      
       console.log(`📍 SENDING USER LOCATION UPDATE: ${latitude}, ${longitude} for ride ${currentRideId}`);
       socket.emit('userLocationUpdate', {
         userId,
@@ -2077,66 +1954,68 @@ const handleRideAccepted = (data: any) => {
         longitude,
         timestamp: Date.now()
       });
-     
-      const token = await AsyncStorage.getItem('authToken');
-      if (token) {
-        const backendUrl = getBackendUrl();
-        await axios.post(`${backendUrl}/api/users/save-location`, {
-          latitude,
-          longitude,
-          rideId: currentRideId
-        }, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-      }
-      console.log('✅ User location update sent successfully');
-    } catch (error) {
-      console.error('❌ Error sending user location update:', error);
-    }
-  }, [currentRideId]);
-  
-  // Continuous location tracking during active rides
-  useEffect(() => {
-    if (!isMountedRef.current) return;
-    
-    let locationInterval;
-    if ((rideStatus === "onTheWay" || rideStatus === "arrived" || rideStatus === "started") && location) {
-      console.log('🔄 Starting continuous user location tracking');
-      locationInterval = setInterval(() => {
-        if (location && isMountedRef.current) {
-          sendUserLocationUpdate(location.latitude, location.longitude);
+       
+        const token = await AsyncStorage.getItem('authToken');
+        if (token) {
+          const backendUrl = getBackendUrl();
+          await axios.post(`${backendUrl}/api/users/save-location`, {
+            latitude,
+            longitude,
+            rideId: currentRideId
+          }, {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          });
         }
-      }, 5000);
-    }
-    
-    return () => {
-      if (locationInterval) {
-        clearInterval(locationInterval);
-        console.log('🛑 Stopped user location tracking');
+        console.log('✅ User location update sent successfully');
+      } catch (error) {
+        console.error('❌ Error sending user location update:', error);
       }
-    };
-  }, [rideStatus, location, sendUserLocationUpdate]);
-  
-  // Update existing location interval
-  useEffect(() => {
+    }, [currentRideId]);
+    
+    // Continuous location tracking during active rides
+    useEffect(() => {
+      if (!isMountedRef.current) return;
+      
+      let locationInterval;
+      if ((rideStatus === "onTheWay" || rideStatus === "arrived" || rideStatus === "started") && location) {
+        console.log('🔄 Starting continuous user location tracking');
+        locationInterval = setInterval(() => {
+          if (location && isMountedRef.current) {
+            sendUserLocationUpdate(location.latitude, location.longitude);
+          }
+        }, 5000);
+      }
+      
+      return () => {
+        if (locationInterval) {
+          clearInterval(locationInterval);
+          console.log('🛑 Stopped user location tracking');
+        }
+      };
+    }, [rideStatus, location, sendUserLocationUpdate]);
+    
+
+    
+
+      useEffect(() => {
     if (!isMountedRef.current) return;
     
     const interval = setInterval(() => {
-      if (location && (rideStatus === "idle" || rideStatus === "searching" || rideStatus === "onTheWay" || rideStatus === "arrived" || rideStatus === "started") && isMountedRef.current) {
+      if (location && (rideStatus === "idle" || rideStatus === "searching")) {
         Geolocation.getCurrentPosition(
           (pos) => {
+            if (!isMountedRef.current) return;
             const newLoc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
             setLocation(newLoc);
-            if (rideStatus === "onTheWay" || rideStatus === "arrived" || rideStatus === "started") {
-              sendUserLocationUpdate(newLoc.latitude, newLoc.longitude);
-            }
+            
             // Only update pickup location if it's current location and ride is not booked
             if (isPickupCurrent && !currentRideId && dropoffLocation) {
               setPickupLocation(newLoc);
               fetchRoute(newLoc, dropoffLocation);
             }
+            
             fetchNearbyDrivers(newLoc.latitude, newLoc.longitude);
           },
           (err) => { console.error("Live location error:", err); },
@@ -2144,598 +2023,577 @@ const handleRideAccepted = (data: any) => {
         );
       }
     }, 5000);
-    
     return () => clearInterval(interval);
-  }, [rideStatus, isPickupCurrent, dropoffLocation, location, socketConnected, sendUserLocationUpdate, currentRideId]);
+  }, [rideStatus, isPickupCurrent, dropoffLocation, location, socketConnected, currentRideId]);
   
-  // Request more frequent driver updates
-  useEffect(() => {
-    if (!isMountedRef.current) return;
-    
-    if (location && socketConnected) {
-      const interval = setInterval(() => {
-        fetchNearbyDrivers(location.latitude, location.longitude);
-      }, 1000);
+
+
+
+  
+    // Request more frequent driver updates
+    useEffect(() => {
+      if (!isMountedRef.current) return;
       
-      return () => clearInterval(interval);
-    }
-  }, [location, socketConnected, selectedRideType]);
-  
-  // Manual ride status polling
-  useEffect(() => {
-    if (!isMountedRef.current) return;
-    
-    if (currentRideId && rideStatus === "searching") {
-      console.log('🔄 Starting backup polling for ride:', currentRideId);
-      const pollInterval = setInterval(() => {
-        if (currentRideId && isMountedRef.current) {
-          console.log('📡 Polling ride status for:', currentRideId);
-          socket.emit('getRideStatus', { rideId: currentRideId }, (data) => {
-            if (data.driverId) {
-              processRideAcceptance(data);
-            } else if (bookedAt && (new Date().getTime() - bookedAt.getTime() > 60000) && rideStatus === "searching") {
-              console.log('⏰ No driver found after 60s');
-              Alert.alert(
-                "No Driver Available",
-                "No driver has accepted your ride yet. Please try again or wait longer.",
-                [{ text: "OK", onPress: () => setRideStatus("idle") }]
-              );
-              clearInterval(pollInterval);
-              AsyncStorage.removeItem('statusPollInterval');
-            }
-          });
-        }
-      }, 3000);
-     
-      AsyncStorage.setItem('statusPollInterval', pollInterval.toString());
-      return () => {
-        clearInterval(pollInterval);
-        AsyncStorage.removeItem('statusPollInterval');
-      };
-    }
-  }, [currentRideId, rideStatus, bookedAt]);
-  
-  // Ensure user joins their room
-  useEffect(() => {
-    if (!isMountedRef.current) return;
-    
-    const registerUserRoom = async () => {
-      try {
-        const userId = await AsyncStorage.getItem('userId');
-        if (userId && socket.connected) {
-          console.log('👤 Registering user with socket room:', userId);
-          socket.emit('registerUser', { userId });
-          socket.emit('joinRoom', { userId });
-        }
-      } catch (error) {
-        console.error('Error registering user room:', error);
-      }
-    };
-   
-    socket.on('connect', registerUserRoom);
-    registerUserRoom();
-   
-    const interval = setInterval(registerUserRoom, 5000);
-    return () => {
-      socket.off('connect', registerUserRoom);
-      clearInterval(interval);
-    };
-  }, []);
-  
-  // Socket recovery
-  useEffect(() => {
-    if (!isMountedRef.current) return;
-    
-    const handleReconnect = async () => {
-      console.log('🔌 Socket reconnected, recovering state...');
-      setSocketConnected(true);
-      try {
-        const userId = await AsyncStorage.getItem('userId');
-        if (userId) {
-          socket.emit('registerUser', { userId });
-          console.log('👤 User re-registered after reconnect:', userId);
-        }
-        const currentRideId = await AsyncStorage.getItem('currentRideId');
-        if (currentRideId) {
-          socket.emit('getRideStatus', { rideId: currentRideId });
-          console.log('🔄 Requesting status for current ride:', currentRideId);
-        }
-      } catch (error) {
-        console.error('Error during socket recovery:', error);
-      }
-    };
-   
-    socket.on("connect", handleReconnect);
-    return () => {
-      socket.off("connect", handleReconnect);
-    };
-  }, []);
-  
-  // Fetch route with retry
-  const fetchRoute = async (pickupCoord: LocationType, dropCoord: LocationType, retryCount = 0) => {
-    if (!isMountedRef.current) return;
-    
-    try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${pickupCoord.longitude},${pickupCoord.latitude};${dropCoord.longitude},${dropCoord.latitude}?overview=full&geometries=geojson`;
-      const res = await fetch(url);
-      const data = await res.json();
-      
-      if (data.code === "Ok" && data.routes.length > 0 && data.routes[0].geometry.coordinates.length >= 2) {
-        const coords = data.routes[0].geometry.coordinates.map(([lng, lat]: number[]) => ({ latitude: lat, longitude: lng }));
-        setRouteCoords(coords);
-        setDistance((data.routes[0].distance / 1000).toFixed(2) + " km");
-        setTravelTime(Math.round(data.routes[0].duration / 60) + " mins");
+      if (location && socketConnected) {
+        const interval = setInterval(() => {
+          fetchNearbyDrivers(location.latitude, location.longitude);
+        }, 1000);
         
-        await AsyncStorage.setItem('rideRouteCoords', JSON.stringify(coords));
-        await AsyncStorage.setItem('rideDistance', (data.routes[0].distance / 1000).toFixed(2) + " km");
-        await AsyncStorage.setItem('rideTravelTime', Math.round(data.routes[0].duration / 60) + " mins");
-      } else {
-        throw new Error("Invalid route data");
+        return () => clearInterval(interval);
       }
-    } catch (err) {
-      console.error(err);
-      if (retryCount < 3 && isMountedRef.current) {
-        console.log(`Retrying route fetch (${retryCount + 1}/3)`);
-        setTimeout(() => fetchRoute(pickupCoord, dropCoord, retryCount + 1), 1000);
-      } else {
-        setRouteCoords([]);
-        setApiError("Network error fetching route");
-        Alert.alert("Route Error", "Failed to fetch route after retries. Please check your internet or try different locations.");
+    }, [location, socketConnected, selectedRideType]);
+    
+    // Manual ride status polling
+    useEffect(() => {
+      if (!isMountedRef.current) return;
+      
+      if (currentRideId && rideStatus === "searching") {
+        console.log('🔄 Starting backup polling for ride:', currentRideId);
+        const pollInterval = setInterval(() => {
+          if (currentRideId && isMountedRef.current) {
+            console.log('📡 Polling ride status for:', currentRideId);
+            socket.emit('getRideStatus', { rideId: currentRideId }, (data) => {
+              console.log('📡 Polling response:', data);
+              if (data && data.driverId && data.status !== 'searching' && data.status !== 'cancelled') {
+                processRideAcceptance(data);
+              } else if (bookedAt && (new Date().getTime() - bookedAt.getTime() > 60000) && rideStatus === "searching") {
+                console.log('⏰ No driver found after 60s');
+                Alert.alert(
+                  "No Driver Available",
+                  "No driver has accepted your ride yet. Please try again or wait longer.",
+                  [{ text: "OK", onPress: () => setRideStatus("idle") }]
+                );
+                clearInterval(pollInterval);
+                AsyncStorage.removeItem('statusPollInterval');
+              }
+            });
+          }
+        }, 3000);
+       
+        AsyncStorage.setItem('statusPollInterval', pollInterval.toString());
+        return () => {
+          clearInterval(pollInterval);
+          AsyncStorage.removeItem('statusPollInterval');
+        };
       }
-    }
-  };
-  
-  // ❌ DISABLED: Auto-fit map to markers removed - user controls map zoom manually
-  // Enhanced map region handling with zoom limits
-  const fitMapToMarkers = useCallback(() => {
-    // This function is disabled to prevent automatic zoom changes
-    // Map zoom and position should only be controlled manually by the user
-    return;
-
-    /* ORIGINAL CODE DISABLED:
-    if (!mapRef.current || !isMountedRef.current) return;
-
-    const markers = [];
-    // Use booked pickup location if available, otherwise use current pickup location
-    if (bookedPickupLocation && !hidePickupAndUserLocation) {
-      markers.push({
-        latitude: bookedPickupLocation.latitude,
-        longitude: bookedPickupLocation.longitude,
-      });
-    } else if (pickupLocation && !hidePickupAndUserLocation) {
-      markers.push({
-        latitude: pickupLocation.latitude,
-        longitude: pickupLocation.longitude,
-      });
-    }
-    if (dropoffLocation) {
-      markers.push({
-        latitude: dropoffLocation.latitude,
-        longitude: dropoffLocation.longitude,
-      });
-    }
-    if (displayedDriverLocation) {
-      markers.push({
-        latitude: displayedDriverLocation.latitude,
-        longitude: displayedDriverLocation.longitude,
-      });
-    }
-    if (location && !hidePickupAndUserLocation) {
-      markers.push({
-        latitude: location.latitude,
-        longitude: location.longitude,
-      });
-    }
-    if (markers.length === 0) return;
-
-    const latitudes = markers.map(marker => marker.latitude);
-    const longitudes = markers.map(marker => marker.longitude);
-
-    const minLat = Math.min(...latitudes);
-    const maxLat = Math.max(...latitudes);
-    const minLng = Math.min(...longitudes);
-    const maxLng = Math.max(...longitudes);
-
-    // Apply zoom limits: 4km for zoom-in, 40km for zoom-out
-    const latitudeDelta = Math.max(0.036, Math.min(0.36, (maxLat - minLat) * 1.2));
-    const longitudeDelta = Math.max(0.036, Math.min(0.36, (maxLng - minLng) * 1.2));
-
-    const region = {
-      latitude: (minLat + maxLat) / 2,
-      longitude: (minLng + maxLng) / 2,
-      latitudeDelta,
-      longitudeDelta,
-    };
-
-    mapRef.current.animateToRegion(region, 1000);
-    */
-  }, [pickupLocation, bookedPickupLocation, dropoffLocation, displayedDriverLocation, location, hidePickupAndUserLocation]);
-
-  // Handle region change to enforce zoom limits
-  const handleRegionChangeComplete = (region: Region) => {
-    if (!isMountedRef.current) return;
+    }, [currentRideId, rideStatus, bookedAt]);
     
-    // Store the current zoom level
-    setMapZoomLevel(region.latitudeDelta);
-    
-    // Enforce zoom limits - 4km for zoom-in, 40km for zoom-out
-    const minLatDelta = 0.036; // ~4km height
-    const maxLatDelta = 0.36;  // ~40km height
-    
-    const constrainedRegion = {
-      ...region,
-      latitudeDelta: Math.max(minLatDelta, Math.min(maxLatDelta, region.latitudeDelta)),
-      longitudeDelta: Math.max(minLatDelta, Math.min(maxLatDelta, region.longitudeDelta)),
-    };
-    
-    setCurrentMapRegion(constrainedRegion);
-    
-    // Only animate back if user is not following driver and the region was significantly constrained
-    if (!followDriverRef.current && 
-        (Math.abs(region.latitudeDelta - constrainedRegion.latitudeDelta) > 0.01 || 
-         Math.abs(region.longitudeDelta - constrainedRegion.longitudeDelta) > 0.01)) {
-      setTimeout(() => {
-        if (mapRef.current && isMountedRef.current) {
-          mapRef.current.animateToRegion(constrainedRegion, 350);
-        }
-      }, 100);
-    }
-  };
-  
-  // Fetch suggestions
-  const fetchSuggestions = async (query: string, type: 'pickup' | 'dropoff'): Promise<SuggestionType[]> => {
-    if (!isMountedRef.current) return [];
-    
+    // Ensure user joins their room
+    useEffect(() => {
+      if (!isMountedRef.current) return;
+      
+  // In the "Ensure user joins their room" useEffect (around line 1860)
+  const registerUserRoom = async () => {
     try {
-      console.log(`Fetching suggestions for: ${query}`);
-      const cache = type === 'pickup' ? pickupCache : dropoffCache;
-      if (cache[query]) {
-        console.log(`Returning cached suggestions for: ${query}`);
-        return cache[query];
+      // Try customerId first, then userId
+      let userId = await AsyncStorage.getItem('customerId');
+      if (!userId) {
+        userId = await AsyncStorage.getItem('userId');
       }
+      
+      if (userId && socket.connected) {
+        console.log('👤 Registering user with socket room:', userId);
+        socket.emit('registerUser', { userId });
+        socket.emit('joinRoom', { userId });
+      }
+    } catch (error) {
+      console.error('Error registering user room:', error);
+    }
+  };
      
-      if (type === 'pickup') setPickupLoading(true);
-      else setDropoffLoading(true);
+      socket.on('connect', registerUserRoom);
+      registerUserRoom();
      
-      setSuggestionsError(null);
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&countrycodes=IN`;
-      console.log(`API URL: ${url}`);
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'EAZYGOApp/1.0' },
-      });
+      const interval = setInterval(registerUserRoom, 5000);
+      return () => {
+        socket.off('connect', registerUserRoom);
+        clearInterval(interval);
+      };
+    }, []);
+    
+    // Socket recovery
+    useEffect(() => {
+      if (!isMountedRef.current) return;
+      
+      const handleReconnect = async () => {
+        console.log('🔌 Socket reconnected, recovering state...');
+        setSocketConnected(true);
+        try {
+          const userId = await AsyncStorage.getItem('userId');
+          if (userId) {
+            socket.emit('registerUser', { userId });
+            console.log('👤 User re-registered after reconnect:', userId);
+          }
+          const currentRideId = await AsyncStorage.getItem('currentRideId');
+          if (currentRideId) {
+            socket.emit('getRideStatus', { rideId: currentRideId });
+            console.log('🔄 Requesting status for current ride:', currentRideId);
+          }
+        } catch (error) {
+          console.error('Error during socket recovery:', error);
+        }
+      };
      
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await response.json();
-      if (!Array.isArray(data)) throw new Error('Invalid response format');
-     
-      const suggestions: SuggestionType[] = data.map((item: any) => ({
-        id: item.place_id || `${item.lat}-${item.lon}`,
-        name: item.display_name,
-        address: extractAddress(item),
-        lat: item.lat,
-        lon: item.lon,
-        type: item.type || 'unknown',
-        importance: item.importance || 0,
-      }));
+      socket.on("connect", handleReconnect);
+      return () => {
+        socket.off("connect", handleReconnect);
+      };
+    }, []);
+    
+    // Fetch route with retry
+    const fetchRoute = async (pickupCoord: LocationType, dropCoord: LocationType, retryCount = 0) => {
+      if (!isMountedRef.current) return;
+      
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${pickupCoord.longitude},${pickupCoord.latitude};${dropCoord.longitude},${dropCoord.latitude}?overview=full&geometries=geojson`;
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (data.code === "Ok" && data.routes.length > 0 && data.routes[0].geometry.coordinates.length >= 2) {
+          const coords = data.routes[0].geometry.coordinates.map(([lng, lat]: number[]) => ({ latitude: lat, longitude: lng }));
+          setRouteCoords(coords);
+          setDistance((data.routes[0].distance / 1000).toFixed(2) + " km");
+          setTravelTime(Math.round(data.routes[0].duration / 60) + " mins");
+          
+          await AsyncStorage.setItem('rideRouteCoords', JSON.stringify(coords));
+          await AsyncStorage.setItem('rideDistance', (data.routes[0].distance / 1000).toFixed(2) + " km");
+          await AsyncStorage.setItem('rideTravelTime', Math.round(data.routes[0].duration / 60) + " mins");
+        } else {
+          throw new Error("Invalid route data");
+        }
+      } catch (err) {
+        console.error(err);
+        if (retryCount < 3 && isMountedRef.current) {
+          console.log(`Retrying route fetch (${retryCount + 1}/3)`);
+          setTimeout(() => fetchRoute(pickupCoord, dropCoord, retryCount + 1), 1000);
+        } else {
+          setRouteCoords([]);
+          setApiError("Network error fetching route");
+          Alert.alert("Route Error", "Failed to fetch route after retries. Please check your internet or try different locations.");
+        }
+      }
+    };
+    
+    // ❌ DISABLED: Auto-fit map to markers removed - user controls map zoom manually
+    // Enhanced map region handling with zoom limits
+    const fitMapToMarkers = useCallback(() => {
+      // This function is disabled to prevent automatic zoom changes
+      // Map zoom and position should only be controlled manually by the user
+      return;
+
+      /* ORIGINAL CODE DISABLED:
+      if (!mapRef.current || !isMountedRef.current) return;
+
+      const markers = [];
+      // Use booked pickup location if available, otherwise use current pickup location
+      if (bookedPickupLocation && !hidePickupAndUserLocation) {
+        markers.push({
+          latitude: bookedPickupLocation.latitude,
+          longitude: bookedPickupLocation.longitude,
+        });
+      } else if (pickupLocation && !hidePickupAndUserLocation) {
+        markers.push({
+          latitude: pickupLocation.latitude,
+          longitude: pickupLocation.longitude,
+        });
+      }
+      if (dropoffLocation) {
+        markers.push({
+          latitude: dropoffLocation.latitude,
+          longitude: dropoffLocation.longitude,
+        });
+      }
+      if (displayedDriverLocation) {
+        markers.push({
+          latitude: displayedDriverLocation.latitude,
+          longitude: displayedDriverLocation.longitude,
+        });
+      }
+      if (location && !hidePickupAndUserLocation) {
+        markers.push({
+          latitude: location.latitude,
+          longitude: location.longitude,
+        });
+      }
+      if (markers.length === 0) return;
+
+      const latitudes = markers.map(marker => marker.latitude);
+      const longitudes = markers.map(marker => marker.longitude);
+
+      const minLat = Math.min(...latitudes);
+      const maxLat = Math.max(...latitudes);
+      const minLng = Math.min(...longitudes);
+      const maxLng = Math.max(...longitudes);
+
+      // Apply zoom limits: 4km for zoom-in, 40km for zoom-out
+      const latitudeDelta = Math.max(0.036, Math.min(0.36, (maxLat - minLat) * 1.2));
+      const longitudeDelta = Math.max(0.036, Math.min(0.36, (maxLng - minLng) * 1.2));
+
+      const region = {
+        latitude: (minLat + maxLat) / 2,
+        longitude: (minLng + maxLng) / 2,
+        latitudeDelta,
+        longitudeDelta,
+      };
+
+      mapRef.current.animateToRegion(region, 1000);
+      */
+    }, [pickupLocation, bookedPickupLocation, dropoffLocation, displayedDriverLocation, location, hidePickupAndUserLocation]);
+
+    // Handle region change to enforce zoom limits
+    const handleRegionChangeComplete = (region: Region) => {
+      if (!isMountedRef.current) return;
+
+      // Store the current zoom level
+      setMapZoomLevel(region.latitudeDelta);
+      setCurrentMapRegion(region);
+      // REMOVED: Automatic zoom enforcement and animation to allow full manual control.
+    };
+    
+    // Fetch suggestions
+    const fetchSuggestions = async (query: string, type: 'pickup' | 'dropoff'): Promise<SuggestionType[]> => {
+      if (!isMountedRef.current) return [];
+      
+      try {
+        console.log(`Fetching suggestions for: ${query}`);
+        const cache = type === 'pickup' ? pickupCache : dropoffCache;
+        if (cache[query]) {
+          console.log(`Returning cached suggestions for: ${query}`);
+          return cache[query];
+        }
+       
+        if (type === 'pickup') setPickupLoading(true);
+        else setDropoffLoading(true);
+       
+        setSuggestionsError(null);
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&countrycodes=IN`;
+        console.log(`API URL: ${url}`);
+        const response = await fetch(url, {
+          headers: { 'User-Agent': 'EAZYGOApp/1.0' },
+        });
+       
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        if (!Array.isArray(data)) throw new Error('Invalid response format');
+       
+        const suggestions: SuggestionType[] = data.map((item: any) => ({
+          id: item.place_id || `${item.lat}-${item.lon}`,
+          name: item.display_name,
+          address: extractAddress(item),
+          lat: item.lat,
+          lon: item.lon,
+          type: item.type || 'unknown',
+          importance: item.importance || 0,
+        }));
+        
+        if (location) {
+          const currentLocationSuggestion: SuggestionType = {
+            id: 'current-location',
+            name: 'Your Current Location',
+            address: 'Use your current location',
+            lat: location.latitude.toString(),
+            lon: location.longitude.toString(),
+            type: 'current',
+            importance: 1,
+          };
+          suggestions.unshift(currentLocationSuggestion);
+        }
+       
+        if (type === 'pickup') setPickupCache(prev => ({ ...prev, [query]: suggestions }));
+        else setDropoffCache(prev => ({ ...prev, [query]: suggestions }));
+       
+        return suggestions;
+      } catch (error: any) {
+        console.error('Suggestions fetch error:', error);
+        setSuggestionsError(error.message || 'Failed to fetch suggestions');
+        return [];
+      } finally {
+        if (type === 'pickup') setPickupLoading(false);
+        else setDropoffLoading(false);
+      }
+    };
+    
+    // Extract address
+    const extractAddress = (item: any): string => {
+      if (item.address) {
+        const parts = [];
+        if (item.address.road) parts.push(item.address.road);
+        if (item.address.suburb) parts.push(item.address.suburb);
+        if (item.address.city || item.address.town || item.address.village) parts.push(item.address.city || item.address.town || item.address.village);
+        if (item.address.state) parts.push(item.address.state);
+        if (item.address.postcode) parts.push(item.address.postcode);
+        return parts.join(', ');
+      }
+      return item.display_name;
+    };
+    
+    // Handle pickup change
+    const handlePickupChange = (text: string) => {
+      if (!isMountedRef.current) return;
+      
+      console.log(`handlePickupChange called with: "${text}"`);
+      propHandlePickupChange(text);
+      if (pickupDebounceTimer.current) {
+        clearTimeout(pickupDebounceTimer.current);
+        pickupDebounceTimer.current = null;
+      }
+      if (text.length > 2) {
+        setPickupLoading(true);
+        setShowPickupSuggestions(true);
+        pickupDebounceTimer.current = setTimeout(async () => {
+          if (isMountedRef.current) {
+            const sugg = await fetchSuggestions(text, 'pickup');
+            setPickupSuggestions(sugg);
+            setPickupLoading(false);
+          }
+        }, 500);
+      } else {
+        setShowPickupSuggestions(false);
+        setPickupSuggestions([]);
+      }
+    };
+    
+    // Handle dropoff change
+    const handleDropoffChange = (text: string) => {
+      if (!isMountedRef.current) return;
+      
+      console.log(`handleDropoffChange called with: "${text}"`);
+      propHandleDropoffChange(text);
+      if (dropoffDebounceTimer.current) {
+        clearTimeout(dropoffDebounceTimer.current);
+        dropoffDebounceTimer.current = null;
+      }
+      if (text.length > 2) {
+        setDropoffLoading(true);
+        setShowDropoffSuggestions(true);
+        dropoffDebounceTimer.current = setTimeout(async () => {
+          if (isMountedRef.current) {
+            const sugg = await fetchSuggestions(text, 'dropoff');
+            setDropoffSuggestions(sugg);
+            setDropoffLoading(false);
+          }
+        }, 500);
+      } else {
+        setShowDropoffSuggestions(false);
+        setDropoffSuggestions([]);
+      }
+    };
+    
+    // Select pickup suggestion
+    const selectPickupSuggestion = (suggestion: SuggestionType) => {
+      if (!isMountedRef.current) return;
+      
+      if (suggestion.type === 'current') {
+        handleAutofillPickup();
+        setShowPickupSuggestions(false);
+        return;
+      }
+    
+      propHandlePickupChange(suggestion.name);
+      const newPickupLocation = { latitude: parseFloat(suggestion.lat), longitude: parseFloat(suggestion.lon) };
+      setPickupLocation(newPickupLocation);
+      setShowPickupSuggestions(false);
+      setIsPickupCurrent(false);
+      if (dropoffLocation) fetchRoute(newPickupLocation, dropoffLocation);
+      fetchNearbyDrivers(parseFloat(suggestion.lat), parseFloat(suggestion.lon));
+    };
+    
+    // Select dropoff suggestion
+    const selectDropoffSuggestion = (suggestion: SuggestionType) => {
+      if (!isMountedRef.current) return;
+      
+      if (suggestion.type === 'current') {
+        handleAutofillDropoff();
+        setShowDropoffSuggestions(false);
+        return;
+      }
+      
+      propHandleDropoffChange(suggestion.name);
+      const newDropoffLocation = { latitude: parseFloat(suggestion.lat), longitude: parseFloat(suggestion.lon) };
+      console.log("Setting dropoffLocation to:", newDropoffLocation);
+      setDropoffLocation(newDropoffLocation);
+      setShowDropoffSuggestions(false);
+      if (pickupLocation) fetchRoute(pickupLocation, newDropoffLocation);
+    };
+    
+    // Handle autofill pickup
+    const handleAutofillPickup = () => {
+      if (!isMountedRef.current) return;
       
       if (location) {
-        const currentLocationSuggestion: SuggestionType = {
-          id: 'current-location',
-          name: 'Your Current Location',
-          address: 'Use your current location',
-          lat: location.latitude.toString(),
-          lon: location.longitude.toString(),
-          type: 'current',
-          importance: 1,
-        };
-        suggestions.unshift(currentLocationSuggestion);
-      }
-     
-      if (type === 'pickup') setPickupCache(prev => ({ ...prev, [query]: suggestions }));
-      else setDropoffCache(prev => ({ ...prev, [query]: suggestions }));
-     
-      return suggestions;
-    } catch (error: any) {
-      console.error('Suggestions fetch error:', error);
-      setSuggestionsError(error.message || 'Failed to fetch suggestions');
-      return [];
-    } finally {
-      if (type === 'pickup') setPickupLoading(false);
-      else setDropoffLoading(false);
-    }
-  };
-  
-  // Extract address
-  const extractAddress = (item: any): string => {
-    if (item.address) {
-      const parts = [];
-      if (item.address.road) parts.push(item.address.road);
-      if (item.address.suburb) parts.push(item.address.suburb);
-      if (item.address.city || item.address.town || item.address.village) parts.push(item.address.city || item.address.town || item.address.village);
-      if (item.address.state) parts.push(item.address.state);
-      if (item.address.postcode) parts.push(item.address.postcode);
-      return parts.join(', ');
-    }
-    return item.display_name;
-  };
-  
-  // Handle pickup change
-  const handlePickupChange = (text: string) => {
-    if (!isMountedRef.current) return;
-    
-    console.log(`handlePickupChange called with: "${text}"`);
-    propHandlePickupChange(text);
-    if (pickupDebounceTimer.current) {
-      clearTimeout(pickupDebounceTimer.current);
-      pickupDebounceTimer.current = null;
-    }
-    if (text.length > 2) {
-      setPickupLoading(true);
-      setShowPickupSuggestions(true);
-      pickupDebounceTimer.current = setTimeout(async () => {
-        if (isMountedRef.current) {
-          const sugg = await fetchSuggestions(text, 'pickup');
-          setPickupSuggestions(sugg);
-          setPickupLoading(false);
-        }
-      }, 500);
-    } else {
-      setShowPickupSuggestions(false);
-      setPickupSuggestions([]);
-    }
-  };
-  
-  // Handle dropoff change
-  const handleDropoffChange = (text: string) => {
-    if (!isMountedRef.current) return;
-    
-    console.log(`handleDropoffChange called with: "${text}"`);
-    propHandleDropoffChange(text);
-    if (dropoffDebounceTimer.current) {
-      clearTimeout(dropoffDebounceTimer.current);
-      dropoffDebounceTimer.current = null;
-    }
-    if (text.length > 2) {
-      setDropoffLoading(true);
-      setShowDropoffSuggestions(true);
-      dropoffDebounceTimer.current = setTimeout(async () => {
-        if (isMountedRef.current) {
-          const sugg = await fetchSuggestions(text, 'dropoff');
-          setDropoffSuggestions(sugg);
-          setDropoffLoading(false);
-        }
-      }, 500);
-    } else {
-      setShowDropoffSuggestions(false);
-      setDropoffSuggestions([]);
-    }
-  };
-  
-  // Select pickup suggestion
-  const selectPickupSuggestion = (suggestion: SuggestionType) => {
-    if (!isMountedRef.current) return;
-    
-    if (suggestion.type === 'current') {
-      handleAutofillPickup();
-      setShowPickupSuggestions(false);
-      return;
-    }
-  
-    propHandlePickupChange(suggestion.name);
-    const newPickupLocation = { latitude: parseFloat(suggestion.lat), longitude: parseFloat(suggestion.lon) };
-    setPickupLocation(newPickupLocation);
-    setShowPickupSuggestions(false);
-    setIsPickupCurrent(false);
-    if (dropoffLocation) fetchRoute(newPickupLocation, dropoffLocation);
-    fetchNearbyDrivers(parseFloat(suggestion.lat), parseFloat(suggestion.lon));
-  };
-  
-  // Select dropoff suggestion
-  const selectDropoffSuggestion = (suggestion: SuggestionType) => {
-    if (!isMountedRef.current) return;
-    
-    if (suggestion.type === 'current') {
-      handleAutofillDropoff();
-      setShowDropoffSuggestions(false);
-      return;
-    }
-    
-    propHandleDropoffChange(suggestion.name);
-    const newDropoffLocation = { latitude: parseFloat(suggestion.lat), longitude: parseFloat(suggestion.lon) };
-    console.log("Setting dropoffLocation to:", newDropoffLocation);
-    setDropoffLocation(newDropoffLocation);
-    setShowDropoffSuggestions(false);
-    if (pickupLocation) fetchRoute(pickupLocation, newDropoffLocation);
-  };
-  
-  // Handle autofill pickup
-  const handleAutofillPickup = () => {
-    if (!isMountedRef.current) return;
-    
-    if (location) {
-      reverseGeocode(location.latitude, location.longitude).then(addr => {
-        if (addr && isMountedRef.current) {
-          propHandlePickupChange(addr);
-          setPickupLocation(location);
-          setIsPickupCurrent(true);
-          
-          if (showPickupSelector) {
-            setShowPickupSelector(false);
-            if (mapRef.current) {
-              mapRef.current.animateToRegion({
-                latitude: location.latitude,
-                longitude: location.longitude,
-                latitudeDelta: 0.036, // 4km zoom level
-                longitudeDelta: 0.036, // 4km zoom level
-              }, 1000);
+        reverseGeocode(location.latitude, location.longitude).then(addr => {
+          if (addr && isMountedRef.current) {
+            propHandlePickupChange(addr);
+            setPickupLocation(location);
+            setIsPickupCurrent(true);
+            
+            if (showPickupSelector) {
+              setShowPickupSelector(false);
+              // REMOVED: Automatic zoom to current location to allow manual control.
             }
+            
+            if (dropoffLocation) fetchRoute(location, dropoffLocation);
           }
-          
-          if (dropoffLocation) fetchRoute(location, dropoffLocation);
-        }
-      });
-    }
-  };
-  
-  // Handle autofill dropoff
-  const handleAutofillDropoff = () => {
-    if (!isMountedRef.current) return;
-    
-    if (location) {
-      reverseGeocode(location.latitude, location.longitude).then(addr => {
-        if (addr && isMountedRef.current) {
-          propHandleDropoffChange(addr);
-          const newDropoffLocation = { ...location };
-          console.log("Setting dropoffLocation to current location:", newDropoffLocation);
-          setDropoffLocation(newDropoffLocation);
-          
-          if (showDropoffSelector) {
-            setShowDropoffSelector(false);
-            if (mapRef.current) {
-              mapRef.current.animateToRegion({
-                latitude: location.latitude,
-                longitude: location.longitude,
-                latitudeDelta: 0.036, // 4km zoom level
-                longitudeDelta: 0.036, // 4km zoom level
-              }, 1000);
-            }
-          }
-          
-          if (pickupLocation) fetchRoute(pickupLocation, newDropoffLocation);
-        }
-      });
-    }
-  };
-  
-  // Update price
-  useEffect(() => {
-    if (!isMountedRef.current) return;
-    
-    const updatePrice = async () => {
-      if (pickupLocation && dropoffLocation && distance) {
-        const price = await calculatePrice();
-        setEstimatedPrice(price);
+        });
       }
     };
-    updatePrice();
-  }, [pickupLocation, dropoffLocation, selectedRideType, wantReturn, distance]);
-  
-  // Panel animation
-  useEffect(() => {
-    if (!isMountedRef.current) return;
     
-    if (showPricePanel) {
-      Animated.timing(panelAnimation, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(panelAnimation, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [showPricePanel]);
-  
-  // Fetch ride price
-  const fetchRidePrice = async (vehicleType: string, distance: number) => {
-    const pricePerKm = dynamicPrices[vehicleType];
-    if (!pricePerKm || pricePerKm === 0) {
-      console.log(`⏳ Waiting for ${vehicleType} price from admin...`);
-      return 0;
-    }
-    const calculatedPrice = distance * pricePerKm;
-    console.log(`💰 Price calculation: ${distance}km ${vehicleType} × ₹${pricePerKm}/km = ₹${calculatedPrice}`);
-    return calculatedPrice;
-  };
-  
-  // Calculate price
-  const calculatePrice = async (): Promise<number | null> => {
+    // Handle autofill dropoff
+    const handleAutofillDropoff = () => {
+      if (!isMountedRef.current) return;
+      
+      if (location) {
+        reverseGeocode(location.latitude, location.longitude).then(addr => {
+          if (addr && isMountedRef.current) {
+            propHandleDropoffChange(addr);
+            const newDropoffLocation = { ...location };
+            console.log("Setting dropoffLocation to current location:", newDropoffLocation);
+            setDropoffLocation(newDropoffLocation);
+            
+            if (showDropoffSelector) {
+              setShowDropoffSelector(false);
+              if (mapRef.current) {
+                mapRef.current.animateToRegion({
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                  latitudeDelta: 0.036, // 4km zoom level
+                  longitudeDelta: 0.036, // 4km zoom level
+                }, 1000);
+              }
+            }
+            
+            if (pickupLocation) fetchRoute(pickupLocation, newDropoffLocation);
+          }
+        });
+      }
+    };
+    
+    // Update price
+    useEffect(() => {
+      if (!isMountedRef.current) return;
+      
+      const updatePrice = async () => {
+        if (pickupLocation && dropoffLocation && distance) {
+          const price = await calculatePrice();
+          setEstimatedPrice(price);
+        }
+      };
+      updatePrice();
+    }, [pickupLocation, dropoffLocation, selectedRideType, wantReturn, distance]);
+    
+    // Panel animation
+    useEffect(() => {
+      if (!isMountedRef.current) return;
+      
+      if (showPricePanel) {
+        Animated.timing(panelAnimation, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      } else {
+        Animated.timing(panelAnimation, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      }
+    }, [showPricePanel]);
+    
+    // Fetch ride price
+    const fetchRidePrice = async (vehicleType: string, distance: number) => {
+      const pricePerKm = dynamicPrices[vehicleType];
+      if (!pricePerKm || pricePerKm === 0) {
+        console.log(`⏳ Waiting for ${vehicleType} price from admin...`);
+        return 0;
+      }
+      const calculatedPrice = distance * pricePerKm;
+      console.log(`💰 Price calculation: ${distance}km ${vehicleType} × ₹${pricePerKm}/km = ₹${calculatedPrice}`);
+      return calculatedPrice;
+    };
+    
+    // Calculate price
+  const calculatePrice = async (): Promise<number> => {
     if (!pickupLocation || !dropoffLocation || !distance) {
       console.log('❌ Missing location data for price calculation');
-      return null;
+      return 0;
     }
-   
+    
     const distanceKm = parseFloat(distance);
     console.log('\n💰 PRICE CALCULATION DEBUG:');
     console.log(`📏 Distance: ${distanceKm}km`);
     console.log(`🚗 Vehicle Type: ${selectedRideType}`);
-    console.log(`🏍️ BIKE Price/km: ₹${dynamicPrices.bike}`);
-    console.log(`🚕 TAXI Price/km: ₹${dynamicPrices.taxi}`);
-    console.log(`🚛 PORT Price/km: ₹${dynamicPrices.port}`);
+    console.log(`💰 Price/km for ${selectedRideType}: ₹${dynamicPrices[selectedRideType]}`);
     console.log('─────────────────────────────────────');
-   
+    
     try {
       const pricePerKm = dynamicPrices[selectedRideType];
-      console.log(`💰 Using price per km: ₹${pricePerKm} for ${selectedRideType}`);
-     
-      if (!pricePerKm || pricePerKm === 0) {
+      
+      if (!pricePerKm || pricePerKm <= 0) {
         console.log('⏳ Waiting for admin prices to be loaded...');
-        console.log('🚫 Booking blocked until prices are received from admin');
-        return null;
+        return 0;
       }
-     
+      
       const calculatedPrice = distanceKm * pricePerKm;
       const multiplier = wantReturn ? 2 : 1;
       const finalPrice = Math.round(calculatedPrice * multiplier);
+      
       console.log(`✅ Final price calculated: ${distanceKm}km × ₹${pricePerKm}/km × ${multiplier} = ₹${finalPrice}`);
       return finalPrice;
+      
     } catch (error) {
       console.error('❌ Error calculating price:', error);
-      return null;
+      return 0;
     }
   };
-  
-  // Price update handler
-  useEffect(() => {
-    if (!isMountedRef.current) return;
     
-    const handlePriceUpdate = (data: { bike: number; taxi: number; port: number }) => {
-      console.log('📡 Received REAL-TIME price update from admin:', data);
-      setDynamicPrices({
-        bike: data.bike,
-        taxi: data.taxi,
-        port: data.port,
-      });
+    // Price update handler
+    useEffect(() => {
+      if (!isMountedRef.current) return;
+      
+      const handlePriceUpdate = (data: { bike: number; taxi: number; port: number }) => {
+        console.log('📡 Received REAL-TIME price update from admin:', data);
+        setDynamicPrices({
+          bike: data.bike,
+          taxi: data.taxi,
+          port: data.port,
+        });
+       
+        console.log('🔄 PRICES UPDATED SUCCESSFULLY:');
+        console.log(`🏍️ BIKE: ₹${data.bike}/km`);
+        console.log(`🚕 TAXI: ₹${data.taxi}/km`);
+        console.log(`🚛 PORT: ₹${data.port}/km`);
+       
+        if (pickupLocation && dropoffLocation && distance) {
+          console.log('🔄 Recalculating price with new admin rates...');
+          calculatePrice();
+        }
+      };
      
-      console.log('🔄 PRICES UPDATED SUCCESSFULLY:');
-      console.log(`🏍️ BIKE: ₹${data.bike}/km`);
-      console.log(`🚕 TAXI: ₹${data.taxi}/km`);
-      console.log(`🚛 PORT: ₹${data.port}/km`);
-     
-      if (pickupLocation && dropoffLocation && distance) {
-        console.log('🔄 Recalculating price with new admin rates...');
-        calculatePrice();
-      }
-    };
-   
-    socket.on('priceUpdate', handlePriceUpdate);
-    return () => {
-      socket.off('priceUpdate', handlePriceUpdate);
-    };
-  }, [pickupLocation, dropoffLocation, distance]);
-  
-  // Request prices on component mount
-  useEffect(() => {
-    if (!isMountedRef.current) return;
+      socket.on('priceUpdate', handlePriceUpdate);
+      return () => {
+        socket.off('priceUpdate', handlePriceUpdate);
+      };
+    }, [pickupLocation, dropoffLocation, distance]);
     
-    console.log('📡 Requesting current prices from admin...');
-    socket.emit('getCurrentPrices');
-  
-    const handleCurrentPrices = (data: { bike: number; taxi: number; port: number }) => {
-      console.log('📡 Received current prices:', data);
-      setDynamicPrices(data);
-    };
-   
-    socket.on('currentPrices', handleCurrentPrices);
-    return () => {
-      socket.off('currentPrices', handleCurrentPrices);
-    };
-  }, []);
-  
-  // Handle book ride
+    // Request prices on component mount
+    useEffect(() => {
+      if (!isMountedRef.current) return;
+      
+      console.log('📡 Requesting current prices from admin...');
+      socket.emit('getCurrentPrices');
+    
+      const handleCurrentPrices = (data: { bike: number; taxi: number; port: number }) => {
+        console.log('📡 Received current prices:', data);
+        setDynamicPrices(data);
+      };
+     
+      socket.on('currentPrices', handleCurrentPrices);
+      return () => {
+        socket.off('currentPrices', handleCurrentPrices);
+      };
+    }, []);
+    
   const handleBookRide = async () => {
     if (!isMountedRef.current) return;
     
@@ -2743,148 +2601,28 @@ const handleRideAccepted = (data: any) => {
       console.log('⏭️ Ride booking already in progress, skipping duplicate');
       return;
     }
+    
+    // First calculate price and ensure it's valid
+    const price = await calculatePrice();
+    if (!price || price <= 0) {
+      Alert.alert("Price Error", "Could not calculate price. Please ensure you have selected both locations.");
+      return;
+    }
+    
+    setEstimatedPrice(price);
     setShowRouteDetailsModal(true);
   };
 
-  const handleConfirmBookingFromModal = async () => {
-    try {
-      console.log('🚨 ===== REAL RIDE BOOKING START =====');
-      
-      // ✅ ADD DEBUG LOGS TO CHECK LOCATIONS
-      console.log('📍 Pickup Location:', pickupLocation);
-      console.log('📍 Dropoff Location:', dropoffLocation);
-      console.log('📱 User ID:', await AsyncStorage.getItem('userId'));
-      
-      // Get user data from AsyncStorage
-      const userId = await AsyncStorage.getItem('userId');
-      const customerId = await AsyncStorage.getItem('customerId');
-      const userName = await AsyncStorage.getItem('userName');
-      const userMobile = await AsyncStorage.getItem('userMobile');
-      const token = await AsyncStorage.getItem('authToken');
-
-      // ✅ Validate required data with better error messages
-      if (!userId) {
-        Alert.alert("Booking Error", "User ID not found. Please login again.");
-        return;
-      }
-      
-      if (!pickupLocation) {
-        Alert.alert("Booking Error", "Please select a pickup location.");
-        return;
-      }
-      
-      if (!dropoffLocation) {
-        Alert.alert("Booking Error", "Please select a dropoff location.");
-        return;
-      }
-
-      // ✅ Use LAST 4 DIGITS of customerId as OTP
-      let otp = '';
-      if (customerId && customerId.length >= 4) {
-        otp = customerId.slice(-4);
-      } else if (userId && userId.length >= 4) {
-        otp = userId.slice(-4);
-      } else {
-        otp = Date.now().toString().slice(-4);
-      }
-
-      
-      const rideData = {
-        userId,
-        customerId: customerId || userId,
-        userName: userName || 'User',
-        userMobile: userMobile || 'N/A',
-        pickup: {
-          lat: pickupLocation.latitude,
-          lng: pickupLocation.longitude,
-          address: pickup,
-        },
-        drop: {
-          lat: dropoffLocation.latitude,
-          lng: dropoffLocation.longitude,
-          address: dropoff,
-        },
-        vehicleType: selectedRideType.toLowerCase(),
-        otp,
-        estimatedPrice,
-        distance: distance.replace(' km', ''),
-        travelTime: travelTime.replace(' mins', ''),
-        wantReturn,
-        token,
-        
-        // FCM flags
-        _fcmRequired: true,
-        _sendFCM: true,
-        _source: 'user_app',
-        _timestamp: Date.now(),
-      };
-
-      // ----------------------------------------------------------------
-      // ✅ CRITICAL DEBUG LOG: Verify the vehicleType is lowercase
-      console.log('📦 DEBUG: Sending ride data to backend:', JSON.stringify(rideData, null, 2));
-      // ----------------------------------------------------------------
-
-      console.log('📦 Sending ride data with locations confirmed');
-      
-      // Set booking state
-      setIsBooking(true);
-      setRideStatus("searching");
-      setBookedPickupLocation(pickupLocation);
-      
-      socket.emit('bookRide', rideData, (response) => {
-          console.log('📨 Server response:', response);
-          
-          if (response && response.success) {
-            console.log('✅ Ride booked successfully');
-            console.log('📱 FCM Push Notification Status:', response.fcmSent ? 'SENT' : 'NOT SENT');
-            console.log('👥 Drivers Notified:', response.driversNotified || 0);
-            
-            if (response.fcmSent) {
-              console.log('🎯 FCM successfully sent to drivers');
-            } else {
-              console.log('⚠️ FCM notification failed');
-              console.log('🔍 Reason:', response.fcmMessage || 'Unknown error');
-            }
-            
-            setCurrentRideId(response.rideId);
-            setBookingOTP(otp);
-            setShowSearchingPopup(true);
-            setShowOTPInput(true);
-            
-            // Save ride data to AsyncStorage
-            AsyncStorage.setItem('currentRideId', response.rideId);
-            AsyncStorage.setItem('bookingOTP', otp);
-            AsyncStorage.setItem('rideStatus', 'searching');
-            AsyncStorage.setItem('bookedPickupLocation', JSON.stringify(pickupLocation));
-            
-          } else {
-            console.log('❌ Ride booking failed');
-            Alert.alert(
-              "Booking Failed", 
-              response?.message || "Failed to book ride. Please try again."
-            );
-            setRideStatus("idle");
-            setIsBooking(false);
-          }
-        });
-        
-      } catch (error) {
-        console.error('❌ Booking error:', error);
-        Alert.alert("Booking Error", "An error occurred while booking. Please try again.");
-        setRideStatus("idle");
-        setIsBooking(false);
-      }
-    };
-
-  // Fetch user data
+  // 1. First, update the user data fetching function to ensure it runs properly
   useEffect(() => {
     if (!isMountedRef.current) return;
     
-    const fetchUserData = async () => {
+    const fetchAndStoreUserData = async () => {
       try {
+        console.log('🔄 Fetching user data from backend...');
         const token = await AsyncStorage.getItem('authToken');
         if (!token) {
-          console.log('No auth token found');
+          console.log('⚠️ No auth token found');
           return;
         }
         
@@ -2895,328 +2633,672 @@ const handleRideAccepted = (data: any) => {
         
         console.log('📋 User Profile Response:', response.data);
         
-        const userProfile = response.data;
-        
-        if (userProfile.success && userProfile.user) {
-          const userData = userProfile.user;
+        if (response.data?.success && response.data?.user) {
+          const userData = response.data.user;
           
-          console.log('👤 User Data to store:', {
+          console.log('👤 User Data:', {
             userId: userData._id,
             customerId: userData.customerId,
-            userName: userData.name,
-            userMobile: userData.phoneNumber,
-            userAddress: userData.address
+            name: userData.name,
+            phoneNumber: userData.phoneNumber
           });
           
-          const storageBatch = [];
+          // Store user data in multiple formats for compatibility
+          await AsyncStorage.setItem('userData', JSON.stringify(userData));
           
-          if (userData._id && userData._id !== 'undefined') {
-            storageBatch.push(['userId', userData._id]);
-          } else {
-            console.warn('⚠️ userId is undefined or invalid');
+          if (userData._id) {
+            await AsyncStorage.setItem('userId', userData._id);
           }
           
-          if (userData.customerId && userData.customerId !== 'undefined') {
-            storageBatch.push(['customerId', userData.customerId]);
-          } else if (userData._id && userData._id !== 'undefined') {
-            storageBatch.push(['customerId', userData._id]);
+          if (userData.customerId) {
+            await AsyncStorage.setItem('customerId', userData.customerId);
+            console.log('✅ Customer ID stored:', userData.customerId);
+          } else if (userData._id) {
+            // Fallback: use _id as customerId
+            await AsyncStorage.setItem('customerId', userData._id);
+            console.log('⚠️ No customerId, using _id as fallback:', userData._id);
           }
           
-          if (userData.name && userData.name !== 'undefined') {
-            storageBatch.push(['userName', userData.name]);
-          } else {
-            storageBatch.push(['userName', '']);
+          if (userData.name) {
+            await AsyncStorage.setItem('userName', userData.name);
           }
           
-          if (userData.phoneNumber && userData.phoneNumber !== 'undefined') {
-            storageBatch.push(['userMobile', userData.phoneNumber]);
+          if (userData.phoneNumber) {
+            await AsyncStorage.setItem('userMobile', userData.phoneNumber);
           }
           
-          if (userData.address && userData.address !== 'undefined') {
-            storageBatch.push(['userAddress', userData.address]);
-          } else {
-            storageBatch.push(['userAddress', '']);
-          }
-          
-          if (storageBatch.length > 0) {
-            await AsyncStorage.multiSet(storageBatch);
-            console.log('✅ User data successfully stored in AsyncStorage');
-          } else {
-            console.warn('⚠️ No valid user data to store');
-          }
+          console.log('✅ User data stored successfully');
         } else {
-          console.error('❌ Invalid user profile response structure');
+          console.error('❌ Invalid user profile response');
         }
-        
-      } catch (error: any) {
+      } catch (error) {
         console.error('❌ Error fetching user data:', error.message);
       }
     };
     
-    fetchUserData();
-  }, []);
-  
-  // Handle ride created
-  useEffect(() => {
-    if (!isMountedRef.current) return;
+    // Fetch user data when component mounts
+    fetchAndStoreUserData();
     
-    const handleRideCreated = async (data) => {
-      console.log('Ride created event received:', data);
-      if (data.success) {
-        if (data.rideId && !currentRideId) {
-          setCurrentRideId(data.rideId);
-        }
-        await AsyncStorage.setItem('lastRideId', data.rideId || currentRideId || '');
-        await AsyncStorage.setItem('ridePickup', pickup);
-        await AsyncStorage.setItem('rideDropoff', dropoff);
-        await AsyncStorage.setItem('ridePickupLocation', JSON.stringify(pickupLocation));
-        await AsyncStorage.setItem('bookedPickupLocation', JSON.stringify(bookedPickupLocation));
-        await AsyncStorage.setItem('rideDropoffLocation', JSON.stringify(dropoffLocation));
-        await AsyncStorage.setItem('rideRouteCoords', JSON.stringify(routeCoords));
-        await AsyncStorage.setItem('rideDistance', distance);
-        await AsyncStorage.setItem('rideTravelTime', travelTime);
-        await AsyncStorage.setItem('rideSelectedType', selectedRideType);
-        await AsyncStorage.setItem('rideWantReturn', wantReturn ? 'true' : 'false');
-        await AsyncStorage.setItem('rideEstimatedPrice', estimatedPrice?.toString() || '');
-        setBookingOTP(data.otp);
-        setRideStatus("searching");
-        AsyncStorage.setItem('rideStatus', 'searching');
-        
-        setShowSearchingPopup(true);
-        setShowOTPInput(true);
-      } else if (data.message) {
-        Alert.alert("Booking Failed", data.message || "Failed to book ride");
-        setRideStatus("idle");
-        setCurrentRideId(null);
-        setBookedPickupLocation(null);
-      }
+    // Also fetch when socket connects
+    const handleSocketConnect = () => {
+      fetchAndStoreUserData();
     };
-   
-    socket.on("rideCreated", handleRideCreated);
+    
+    socket.on('connect', handleSocketConnect);
+    
     return () => {
-      socket.off("rideCreated", handleRideCreated);
+      socket.off('connect', handleSocketConnect);
     };
-  }, [currentRideId, pickup, dropoff, pickupLocation, bookedPickupLocation, dropoffLocation, routeCoords, distance, travelTime, selectedRideType, wantReturn, estimatedPrice]);
-  
-  // Format phone number to show only first 2 and last 4 digits
-  const formatPhoneNumber = (phoneNumber: string | null): string => {
-    if (!phoneNumber) return 'N/A';
-    if (phoneNumber.length <= 6) return phoneNumber;
-    const firstTwo = phoneNumber.substring(0, 2);
-    const lastFour = phoneNumber.substring(phoneNumber.length - 4);
-    const middleStars = '*'.repeat(phoneNumber.length - 6);
-    return `${firstTwo}${middleStars}${lastFour}`;
-  };
-  
-  // Handle phone call
-  const handlePhoneCall = () => {
-    if (acceptedDriver && acceptedDriver.driverMobile) {
-      Linking.openURL(`tel:${acceptedDriver.driverMobile}`)
-        .catch(err => console.error('Error opening phone dialer:', err));
-    }
-  };
-  
-  // Render suggestion item
-  const renderSuggestionItem = (item: SuggestionType, onSelect: () => void, key: string) => {
-    let iconName = 'location-on';
-    let iconColor = '#A9A9A9';
-    
-    if (item.type === 'current') {
-      iconName = 'my-location';
-      iconColor = '#4CAF50';
-    } else if (item.type.includes('railway') || item.type.includes('station')) { 
-      iconName = 'train'; 
-      iconColor = '#3F51B5'; 
-    } else if (item.type.includes('airport')) { 
-      iconName = 'flight'; 
-      iconColor = '#2196F3'; 
-    } else if (item.type.includes('bus')) { 
-      iconName = 'directions-bus'; 
-      iconColor = '#FF9800'; 
-    } else if (item.type.includes('hospital')) { 
-      iconName = 'local-hospital'; 
-      iconColor = '#F44336'; 
-    } else if (item.type.includes('school') || item.type.includes('college')) { 
-      iconName = 'school'; 
-      iconColor = '#4CAF50'; 
-    } else if (item.type.includes('place_of_worship')) { 
-      iconName = 'church'; 
-      iconColor = '#9C27B0'; 
-    } else if (item.type.includes('shop') || item.type.includes('mall')) { 
-      iconName = 'shopping-mall'; 
-      iconColor = '#E91E63'; 
-    } else if (item.type.includes('park')) { 
-      iconName = 'park'; 
-      iconColor = '#4CAF50'; 
-    }
-   
-    return (
-      <TouchableOpacity key={key} style={styles.suggestionItem} onPress={onSelect}>
-        <MaterialIcons name={iconName as any} size={20} color={iconColor} style={styles.suggestionIcon} />
-        <View style={styles.suggestionTextContainer}>
-          <Text style={styles.suggestionMainText} numberOfLines={1}>{extractMainName(item.name)}</Text>
-          <Text style={styles.suggestionSubText} numberOfLines={1}>{item.address}</Text>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-  
-  // Extract main name
-  const extractMainName = (fullName: string): string => {
-    const parts = fullName.split(',');
-    return parts[0].trim();
-  };
-  
-  // Check if book ride button is enabled
-  const isBookRideButtonEnabled = pickup && dropoff && selectedRideType && estimatedPrice !== null;
-  
-  // Reverse geocode
-  const reverseGeocode = async (lat: number, lon: number): Promise<string | null> => {
+  }, []);
+
+  // 2. Add a helper function to get user data with fallbacks
+  const getUserData = async () => {
     try {
-      const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1&countrycodes=IN`;
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'EAZYGOApp/1.0' },
-      });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await response.json();
-      return data.display_name || null;
+      // First try to get from AsyncStorage
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (userDataStr) {
+        const userData = JSON.parse(userDataStr);
+        if (userData.customerId) {
+          return {
+            userId: userData._id || await AsyncStorage.getItem('userId'),
+            customerId: userData.customerId,
+            userName: userData.name || await AsyncStorage.getItem('userName'),
+            userMobile: userData.phoneNumber || await AsyncStorage.getItem('userMobile')
+          };
+        }
+      }
+      
+      // If no userData, try individual items
+      const userId = await AsyncStorage.getItem('userId');
+      const customerId = await AsyncStorage.getItem('customerId');
+      const userName = await AsyncStorage.getItem('userName');
+      const userMobile = await AsyncStorage.getItem('userMobile');
+      
+      return {
+        userId,
+        customerId: customerId || userId, // Use userId as fallback for customerId
+        userName,
+        userMobile
+      };
     } catch (error) {
-      console.error('Reverse geocode error:', error);
+      console.error('❌ Error getting user data:', error);
       return null;
     }
   };
-  
-  const handleMapSelectionDone = async (isPickup: boolean) => {
-    if (!isMountedRef.current) return;
-    
-    if (currentMapRegion) {
-      const addr = await reverseGeocode(currentMapRegion.latitude, currentMapRegion.longitude);
-      if (addr) {
-        if (isPickup) {
-          propHandlePickupChange(addr);
-          const newPickupLocation = { latitude: currentMapRegion.latitude, longitude: currentMapRegion.longitude };
-          setPickupLocation(newPickupLocation);
-          setIsPickupCurrent(false);
-          if (dropoffLocation) fetchRoute(newPickupLocation, dropoffLocation);
-          fetchNearbyDrivers(currentMapRegion.latitude, currentMapRegion.longitude);
-        } else {
-          const newDropoffLocation = { latitude: currentMapRegion.latitude, longitude: currentMapRegion.longitude };
-          console.log("Setting dropoffLocation to:", newDropoffLocation);
-          setDropoffLocation(newDropoffLocation);
-          propHandleDropoffChange(addr);
-          if (pickupLocation) fetchRoute(pickupLocation, newDropoffLocation);
+
+  // 3. UPDATED handleConfirmBookingFromModal - FIXED with all required fields
+  const handleConfirmBookingFromModal = async () => {
+    try {
+      console.log('🚨 ===== REAL RIDE BOOKING START =====');
+      
+      // Get user data with fallbacks
+      const userInfo = await getUserData();
+      
+      if (!userInfo) {
+        Alert.alert("Booking Error", "User information not found. Please login again.");
+        return;
+      }
+      
+      // ✅ Use customerId with fallback to userId
+      const customerId = userInfo.customerId || userInfo.userId;
+      
+      if (!customerId) {
+        Alert.alert("Booking Error", "User ID not found. Please login again.");
+        return;
+      }
+      
+      // ✅ Validate locations
+      if (!pickupLocation) {
+        Alert.alert("Booking Error", "Please select a pickup location.");
+        return;
+      }
+      
+      if (!dropoffLocation) {
+        Alert.alert("Booking Error", "Please select a dropoff location.");
+        return;
+      }
+
+      // ✅ Validate price and distance
+      if (!estimatedPrice) {
+        Alert.alert("Booking Error", "Please calculate the price first.");
+        return;
+      }
+
+      if (!distance || distance === ' km') {
+        Alert.alert("Booking Error", "Could not calculate distance. Please try again.");
+        return;
+      }
+
+      // ✅ Generate OTP from customerId (last 4 digits)
+      let otp = '';
+      if (customerId && customerId.length >= 4) {
+        otp = customerId.slice(-4);
+      } else {
+        otp = Date.now().toString().slice(-4);
+      }
+
+      // Get token
+      const token = await AsyncStorage.getItem('authToken');
+
+      // ✅ COMPLETE RIDE DATA with ALL required fields
+      const rideData = {
+        // Required identifiers
+        customerId, // ✅ Using customerId
+        userId: userInfo.userId, // ✅ Also send userId for compatibility
+        
+        // Location data
+        pickup: {
+          lat: pickupLocation.latitude,
+          lng: pickupLocation.longitude,
+          address: pickup || 'Pickup Location',
+        },
+        drop: {
+          lat: dropoffLocation.latitude,
+          lng: dropoffLocation.longitude,
+          address: dropoff || 'Dropoff Location',
+        },
+        
+        // Ride details
+        vehicleType: selectedRideType.toLowerCase(),
+        otp: otp.toString(), // Ensure it's a string
+        estimatedPrice: estimatedPrice, // Must be a number
+        distance: parseFloat(distance.replace(' km', '')) || 0, // Convert to number
+        travelTime: parseInt(travelTime.replace(' mins', '')) || 0, // Convert to number
+        wantReturn: Boolean(wantReturn),
+        
+        // Payment/User info
+        token: token || '',
+        paymentMethod: 'wallet', // Default to wallet
+        
+        // Additional info for tracking
+        userName: userInfo.userName || 'Customer',
+        userMobile: userInfo.userMobile || 'N/A',
+        bookingTime: new Date().toISOString(),
+        
+        _timestamp: Date.now(),
+      };
+
+      console.log('📦 Sending COMPLETE ride data:', {
+        customerId: rideData.customerId,
+        userId: rideData.userId,
+        vehicleType: rideData.vehicleType,
+        hasPickup: !!pickupLocation,
+        hasDropoff: !!dropoffLocation,
+        estimatedPrice: rideData.estimatedPrice,
+        distance: rideData.distance,
+        travelTime: rideData.travelTime,
+        otp: rideData.otp
+      });
+      
+      // Validate all required fields
+      const requiredFields = ['customerId', 'pickup', 'drop', 'vehicleType', 'estimatedPrice', 'distance'];
+      const missingFields = requiredFields.filter(field => {
+        if (field === 'pickup' || field === 'drop') {
+          return !rideData[field] || !rideData[field].lat || !rideData[field].lng;
         }
+        return !rideData[field];
+      });
+      
+      if (missingFields.length > 0) {
+        console.error('❌ Missing required fields:', missingFields);
+        Alert.alert(
+          "Booking Error", 
+          `Missing required fields: ${missingFields.join(', ')}. Please check your inputs.`
+        );
+        return;
       }
-      setShowPickupSelector(false);
-      setShowDropoffSelector(false);
-    }
-  };
-  
-  // Handle cancel button
-  const handleCancel = () => {
-    if (!isMountedRef.current) return;
-    
-    setPickupLocation(null);
-    setDropoffLocation(null);
-    setBookedPickupLocation(null);
-    setRouteCoords([]);
-    setDistance('');
-    setTravelTime('');
-    setEstimatedPrice(null);
-    propHandlePickupChange('');
-    propHandleDropoffChange('');
-    setShowPickupSelector(false);
-    setShowDropoffSelector(false);
-    setShowRideOptions(false);
-  };
-  
-  const handleCancelRide = async () => {
-    if (!isMountedRef.current) return;
-
-    setNearbyDrivers([]);
-    setNearbyDriversCount(0);
-
-    if (currentRideId) {
-      socket.emit('cancelRide', { rideId: currentRideId });
-    }
-
-    setRideStatus("idle");
-    setCurrentRideId(null);
-    setRealTimeNavigationActive(false);
-    setShowLocationOverlay(true);
-    setAcceptedDriver(null);
-    setDriverLocation(null);
-    setDisplayedDriverLocation(null);
-
-    setShowSearchingPopup(false);
-    setShowOTPInput(false);
-
-    AsyncStorage.getItem('statusPollInterval').then(id => {
-      if (id) {
-        clearInterval(parseInt(id));
-        AsyncStorage.removeItem('statusPollInterval');
-      }
-    });
-
-    AsyncStorage.getItem('acceptanceTimeout').then(id => {
-      if (id) {
-        clearTimeout(parseInt(id));
-        AsyncStorage.removeItem('acceptanceTimeout');
-      }
-    });
-
-    setTimeout(() => {
-      if (isMountedRef.current) {
-        setMapKey(prev => prev + 1);
-      }
-    }, 100);
-
-    await clearRideStorage();
-    Alert.alert("Ride Cancelled", "Your ride booking has been cancelled.");
-  };
-  
-  // Handle ride cancelled from server
-  useEffect(() => {
-    if (!isMountedRef.current) return;
-    
-    const handleRideCancelled = async (data: { rideId: string }) => {
-      if (data.rideId === currentRideId) {
+      
+      // Set booking state
+      setIsBooking(true);
+      setRideStatus("searching");
+      setBookedPickupLocation(pickupLocation);
+      
+      // Send booking request with timeout
+      const bookingTimeout = setTimeout(() => {
+        console.log('⏰ Booking timeout - no response from server');
+        Alert.alert("Booking Timeout", "No response from server. Please try again.");
         setRideStatus("idle");
-        setCurrentRideId(null);
-        setRealTimeNavigationActive(false);
-        setShowLocationOverlay(true);
-        setShowSearchingPopup(false);
-        setShowOTPInput(false);
-        await clearRideStorage();
-        Alert.alert("Ride Cancelled", "Your ride has been cancelled.");
+        setIsBooking(false);
+      }, 10000);
+      
+      socket.emit('bookRide', rideData, (response) => {
+        clearTimeout(bookingTimeout);
+        console.log('📨 Server response:', response);
+        
+        if (response && response.success) {
+          console.log('✅ Ride booked successfully:', response.rideId);
+          
+          setCurrentRideId(response.rideId);
+          setBookingOTP(otp);
+          setShowSearchingPopup(true);
+          setShowOTPInput(true);
+          
+          // Save ride data
+          AsyncStorage.setItem('currentRideId', response.rideId);
+          AsyncStorage.setItem('bookingOTP', otp);
+          AsyncStorage.setItem('rideStatus', 'searching');
+          AsyncStorage.setItem('bookedPickupLocation', JSON.stringify(pickupLocation));
+          AsyncStorage.setItem('rideData', JSON.stringify(rideData));
+          
+          // Close the modal
+          setShowRouteDetailsModal(false);
+          
+        } else {
+          console.log('❌ Ride booking failed:', response?.message);
+          Alert.alert(
+            "Booking Failed", 
+            response?.message || "Failed to book ride. Please check your inputs and try again."
+          );
+          setRideStatus("idle");
+          setIsBooking(false);
+        }
+      });
+      
+    } catch (error) {
+      console.error('❌ Booking error:', error);
+      Alert.alert(
+        "Booking Error", 
+        error.message || "An error occurred while booking. Please try again."
+      );
+      setRideStatus("idle");
+      setIsBooking(false);
+    }
+  };
+    
+    // Handle ride created
+    useEffect(() => {
+      if (!isMountedRef.current) return;
+      
+  // In handleRideCreated or similar functions
+  const handleRideCreated = async (data) => {
+    console.log('Ride created event received:', data);
+    if (data.success) {
+      // Only store essential ride data, not user personal data
+      await AsyncStorage.setItem('lastRideId', data.rideId || currentRideId || '');
+      await AsyncStorage.setItem('ridePickup', pickup);
+      await AsyncStorage.setItem('rideDropoff', dropoff);
+      await AsyncStorage.setItem('ridePickupLocation', JSON.stringify(pickupLocation));
+
+          await AsyncStorage.setItem('bookedPickupLocation', JSON.stringify(bookedPickupLocation));
+          await AsyncStorage.setItem('rideDropoffLocation', JSON.stringify(dropoffLocation));
+          await AsyncStorage.setItem('rideRouteCoords', JSON.stringify(routeCoords));
+          await AsyncStorage.setItem('rideDistance', distance);
+          await AsyncStorage.setItem('rideTravelTime', travelTime);
+          await AsyncStorage.setItem('rideSelectedType', selectedRideType);
+          await AsyncStorage.setItem('rideWantReturn', wantReturn ? 'true' : 'false');
+          await AsyncStorage.setItem('rideEstimatedPrice', estimatedPrice?.toString() || '');
+          setBookingOTP(data.otp);
+          setRideStatus("searching");
+          AsyncStorage.setItem('rideStatus', 'searching');
+          
+          setShowSearchingPopup(true);
+          setShowOTPInput(true);
+        } else if (data.message) {
+          Alert.alert("Booking Failed", data.message || "Failed to book ride");
+          setRideStatus("idle");
+          setCurrentRideId(null);
+          setBookedPickupLocation(null);
+        }
+      };
+     
+      socket.on("rideCreated", handleRideCreated);
+      return () => {
+        socket.off("rideCreated", handleRideCreated);
+      };
+    }, [currentRideId, pickup, dropoff, pickupLocation, bookedPickupLocation, dropoffLocation, routeCoords, distance, travelTime, selectedRideType, wantReturn, estimatedPrice]);
+    
+    // Format phone number to show only first 2 and last 4 digits
+    const formatPhoneNumber = (phoneNumber: string | null): string => {
+      if (!phoneNumber) return 'N/A';
+      if (phoneNumber.length <= 6) return phoneNumber;
+      const firstTwo = phoneNumber.substring(0, 2);
+      const lastFour = phoneNumber.substring(phoneNumber.length - 4);
+      const middleStars = '*'.repeat(phoneNumber.length - 6);
+      return `${firstTwo}${middleStars}${lastFour}`;
+    };
+    
+    // Handle phone call
+    const handlePhoneCall = () => {
+      if (acceptedDriver && acceptedDriver.driverMobile) {
+        Linking.openURL(`tel:${acceptedDriver.driverMobile}`)
+          .catch(err => console.error('Error opening phone dialer:', err));
       }
     };
-    socket.on("rideCancelled", handleRideCancelled);
-    return () => socket.off("rideCancelled", handleRideCancelled);
-  }, [currentRideId]);
-  
-  useEffect(() => {
-    if (!isMountedRef.current) return;
     
-    if (mapNeedsRefresh && mapRef.current && location) {
-      mapRef.current.animateToRegion({
-        latitude: location.latitude,
-        longitude: location.longitude,
-        latitudeDelta: 0.036, // 4km zoom level
-        longitudeDelta: 0.036, // 4km zoom level
-      }, 1000);
-      fetchNearbyDrivers(location.latitude, location.longitude);
-      setMapNeedsRefresh(false);
-    }
-  }, [mapNeedsRefresh, location]);
-  
-  const handleBillModalClose = async () => {
+    // Render suggestion item
+    const renderSuggestionItem = (item: SuggestionType, onSelect: () => void, key: string) => {
+      let iconName = 'location-on';
+      let iconColor = '#A9A9A9';
+      
+      if (item.type === 'current') {
+        iconName = 'my-location';
+        iconColor = '#4CAF50';
+      } else if (item.type.includes('railway') || item.type.includes('station')) { 
+        iconName = 'train'; 
+        iconColor = '#3F51B5'; 
+      } else if (item.type.includes('airport')) { 
+        iconName = 'flight'; 
+        iconColor = '#2196F3'; 
+      } else if (item.type.includes('bus')) { 
+        iconName = 'directions-bus'; 
+        iconColor = '#FF9800'; 
+      } else if (item.type.includes('hospital')) { 
+        iconName = 'local-hospital'; 
+        iconColor = '#F44336'; 
+      } else if (item.type.includes('school') || item.type.includes('college')) { 
+        iconName = 'school'; 
+        iconColor = '#4CAF50'; 
+      } else if (item.type.includes('place_of_worship')) { 
+        iconName = 'church'; 
+        iconColor = '#9C27B0'; 
+      } else if (item.type.includes('shop') || item.type.includes('mall')) { 
+        iconName = 'shopping-mall'; 
+        iconColor = '#E91E63'; 
+      } else if (item.type.includes('park')) { 
+        iconName = 'park'; 
+        iconColor = '#4CAF50'; 
+      }
+     
+      return (
+        <TouchableOpacity key={key} style={styles.suggestionItem} onPress={onSelect}>
+          <MaterialIcons name={iconName as any} size={20} color={iconColor} style={styles.suggestionIcon} />
+          <View style={styles.suggestionTextContainer}>
+            <Text style={styles.suggestionMainText} numberOfLines={1}>{extractMainName(item.name)}</Text>
+            <Text style={styles.suggestionSubText} numberOfLines={1}>{item.address}</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    };
+    
+    // Extract main name
+    const extractMainName = (fullName: string): string => {
+      const parts = fullName.split(',');
+      return parts[0].trim();
+    };
+    
+    // Check if book ride button is enabled
+    const isBookRideButtonEnabled = pickup && dropoff && selectedRideType && estimatedPrice !== null;
+    
+    // Reverse geocode
+    const reverseGeocode = async (lat: number, lon: number): Promise<string | null> => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1&countrycodes=IN`;
+        const response = await fetch(url, {
+          headers: { 'User-Agent': 'EAZYGOApp/1.0' },
+        });
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        return data.display_name || null;
+      } catch (error) {
+        console.error('Reverse geocode error:', error);
+        return null;
+      }
+    };
+    
+    const handleMapSelectionDone = async (isPickup: boolean) => {
+      if (!isMountedRef.current) return;
+      
+      if (currentMapRegion) {
+        const addr = await reverseGeocode(currentMapRegion.latitude, currentMapRegion.longitude);
+        if (addr) {
+          if (isPickup) {
+            propHandlePickupChange(addr);
+            const newPickupLocation = { latitude: currentMapRegion.latitude, longitude: currentMapRegion.longitude };
+            setPickupLocation(newPickupLocation);
+            setIsPickupCurrent(false);
+            if (dropoffLocation) fetchRoute(newPickupLocation, dropoffLocation);
+            fetchNearbyDrivers(currentMapRegion.latitude, currentMapRegion.longitude);
+          } else {
+            const newDropoffLocation = { latitude: currentMapRegion.latitude, longitude: currentMapRegion.longitude };
+            console.log("Setting dropoffLocation to:", newDropoffLocation);
+            setDropoffLocation(newDropoffLocation);
+            propHandleDropoffChange(addr);
+            if (pickupLocation) fetchRoute(pickupLocation, newDropoffLocation);
+          }
+        }
+        setShowPickupSelector(false);
+        setShowDropoffSelector(false);
+      }
+    };
+    
+    // Handle cancel button
+    const handleCancel = () => {
+      if (!isMountedRef.current) return;
+      
+      setPickupLocation(null);
+      setDropoffLocation(null);
+      setBookedPickupLocation(null);
+      setRouteCoords([]);
+      setDistance('');
+      setTravelTime('');
+      setEstimatedPrice(null);
+      propHandlePickupChange('');
+      propHandleDropoffChange('');
+      setShowPickupSelector(false);
+      setShowDropoffSelector(false);
+      setShowRideOptions(false);
+    };
+    
+    const handleCancelRide = async () => {
+      if (!isMountedRef.current) return;
+
+      setNearbyDrivers([]);
+      setNearbyDriversCount(0);
+
+      if (currentRideId) {
+        socket.emit('cancelRide', { rideId: currentRideId });
+      }
+
+      setRideStatus("idle");
+      setCurrentRideId(null);
+      setRealTimeNavigationActive(false);
+      setShowLocationOverlay(true);
+      setAcceptedDriver(null);
+      setDriverLocation(null);
+      setDisplayedDriverLocation(null);
+
+      setShowSearchingPopup(false);
+      setShowOTPInput(false);
+
+      AsyncStorage.getItem('statusPollInterval').then(id => {
+        if (id) {
+          clearInterval(parseInt(id));
+          AsyncStorage.removeItem('statusPollInterval');
+        }
+      });
+
+      AsyncStorage.getItem('acceptanceTimeout').then(id => {
+        if (id) {
+          clearTimeout(parseInt(id));
+          AsyncStorage.removeItem('acceptanceTimeout');
+        }
+      });
+
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          setMapKey(prev => prev + 1);
+        }
+      }, 100);
+
+      await clearRideStorage();
+      Alert.alert("Ride Cancelled", "Your ride booking has been cancelled.");
+    };
+    
+    // Handle ride cancelled from server
+    useEffect(() => {
+      if (!isMountedRef.current) return;
+      
+      const handleRideCancelled = async (data: { rideId: string }) => {
+        if (data.rideId === currentRideId) {
+          setRideStatus("idle");
+          setCurrentRideId(null);
+          setRealTimeNavigationActive(false);
+          setShowLocationOverlay(true);
+          setShowSearchingPopup(false);
+          setShowOTPInput(false);
+          await clearRideStorage();
+          Alert.alert("Ride Cancelled", "Your ride has been cancelled.");
+        }
+      };
+      socket.on("rideCancelled", handleRideCancelled);
+      return () => socket.off("rideCancelled", handleRideCancelled);
+    }, [currentRideId]);
+    
+    useEffect(() => {
+      if (!isMountedRef.current) return;
+      
+      if (mapNeedsRefresh && mapRef.current && location) {
+        mapRef.current.animateToRegion({
+          latitude: location.latitude,
+          longitude: location.longitude,
+          latitudeDelta: 0.036, // 4km zoom level
+          longitudeDelta: 0.036, // 4km zoom level
+        }, 1000);
+        fetchNearbyDrivers(location.latitude, location.longitude);
+        setMapNeedsRefresh(false);
+      }
+    }, [mapNeedsRefresh, location]);
+
+  // FIXED: Ride Completion Handler
+  const handleRideCompleted = useCallback(async (data: any) => {
     if (!isMountedRef.current) return;
 
-    // Close modal immediately
-    setShowBillModal(false);
+    // Prevent duplicate event handling
+    if (rideStatusRef.current === 'completed') {
+      console.log('⚠️ Ride already marked as completed. Ignoring duplicate event.');
+      return;
+    }
 
-    // Reset all state in a batch to minimize renders
+    try {
+      console.log("🎉🎉🎉 RIDE COMPLETED EVENT RECEIVED 🎉🎉🎉");
+      console.log('📦 Ride completion data:', JSON.stringify(data, null, 2));
+
+      // Check if this is for our current ride
+      const isOurRide = data.rideId === currentRideIdRef.current;
+      if (!isOurRide) {
+        console.log('⚠️ Ride completion event not for current ride:', data.rideId);
+        return;
+      }
+
+      // 1. Update ride status immediately
+      setRideStatus("completed");
+      setRealTimeNavigationActive(false);
+      setFollowDriver(false);
+      setShowOTPInput(false);
+
+      // Update refs
+      rideStatusRef.current = "completed";
+      realTimeNavigationActiveRef.current = false;
+
+      // 2. Prepare bill details
+      const finalCharge = data?.fare || data?.charge || data?.totalAmount || 0;
+      const distanceValue = data?.distance || '0.00 km';
+      const durationValue = data?.duration || data?.travelTime || 'N/A';
+      const driverNameValue = data?.driverName || acceptedDriverRef.current?.name || 'Driver';
+      const vehicleTypeValue = data?.vehicleType || acceptedDriverRef.current?.vehicleType || 'taxi';
+
+      // Create fare breakdown
+      const fareBreakdown = {
+        baseFare: data?.baseFare || finalCharge * 0.6,
+        distanceCharge: data?.distanceCharge || finalCharge * 0.3,
+        timeCharge: data?.timeCharge || finalCharge * 0.1,
+        surcharge: data?.surcharge || 0
+      };
+
+      // Fetch current wallet balance
+      let currentWalletBalance = walletBalance;
+      try {
+        await fetchWalletBalance(); // Refresh wallet balance
+        currentWalletBalance = walletBalance;
+      } catch (error) {
+        console.error('❌ Error fetching wallet balance:', error);
+      }
+
+      const billData = {
+        distance: distanceValue,
+        duration: durationValue,
+        fareBreakdown,
+        totalAmount: finalCharge,
+        walletBalance: currentWalletBalance,
+        driverName: driverNameValue,
+        vehicleType: vehicleTypeValue,
+      };
+
+      console.log('📋 Bill data prepared:', JSON.stringify(billData, null, 2));
+      
+      // 3. Set billing data and show modal
+      setBillingData(billData);
+      
+      // Small delay to ensure state is updated
+      setTimeout(() => {
+        console.log('🔔 Showing bill modal...');
+        setShowBillModal(true);
+      }, 500);
+
+      // 4. Save completion state
+      await AsyncStorage.setItem('rideStatus', 'completed');
+      
+    } catch (error) {
+      console.error('❌ Error in handleRideCompleted:', error);
+    }
+  }, [fetchWalletBalance, walletBalance]);
+
+  // FIXED: Bill Modal Close Handler
+  const handleBillModalClose = useCallback(async () => {
+    if (!isMountedRef.current) return;
+
+    console.log('🔄 User dismissed bill. Processing payment and resetting app...');
+
+    // Check if we have valid billing data
+    if (!billingData || typeof billingData.totalAmount !== 'number') {
+      console.warn('⚠️ No billing data available, proceeding with reset');
+      resetAppState();
+      return;
+    }
+
+    // Validate billing data
+    if (billingData.totalAmount <= 0) {
+      console.warn('⚠️ Invalid billing amount, proceeding with reset');
+      resetAppState();
+      return;
+    }
+
+    try {
+      console.log('💳 Processing payment for ride:', currentRideIdRef.current);
+      const token = await AsyncStorage.getItem('authToken');
+      const backendUrl = getBackendUrl();
+      
+      await axios.post(`${backendUrl}/api/wallet/pay-ride`, {
+        rideId: currentRideIdRef.current,
+        amount: billingData.totalAmount,
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      console.log('✅ Payment processed successfully on backend.');
+      Alert.alert('Payment Successful', `₹${billingData.totalAmount} has been paid from your wallet.`);
+      
+      // Refresh wallet to get the new balance
+      await refreshWallet();
+      
+    } catch (error) {
+      console.error('❌ Payment failed:', error.response?.data?.message || error.message);
+      Alert.alert('Payment Failed', error.response?.data?.message || 'Could not process payment from wallet. Please check your balance.');
+    } finally {
+      // Always reset app state
+      resetAppState();
+    }
+  }, [billingData, refreshWallet]);
+
+  // Helper function to reset app state
+  const resetAppState = useCallback(async () => {
+    console.log('🧹 Resetting app to default state...');
+
+    // Close the modal
+    setShowBillModal(false);
+    setBillingData(null);
+
+    // Reset all ride-related state variables
     setRideStatus("idle");
     setCurrentRideId(null);
     setDriverId(null);
@@ -3252,87 +3334,106 @@ const handleRideAccepted = (data: any) => {
     propHandlePickupChange('');
     propHandleDropoffChange('');
 
-    // ✅ Reset map zoom to default state and center on user location
-    if (mapRef.current && location) {
-      setTimeout(() => {
-        if (mapRef.current && location && isMountedRef.current) {
-          mapRef.current.animateToRegion({
-            latitude: location.latitude,
-            longitude: location.longitude,
-            latitudeDelta: 0.036, // 4km zoom level (default)
-            longitudeDelta: 0.036,
-          }, 1000);
-          console.log('✅ Map reset to default zoom and centered on user location');
-        }
-      }, 300);
+    // Force the map to completely remount, clearing all old markers and polylines
+    setMapKey(prevKey => prevKey + 1);
+
+    // Clear all ride data from storage
+    await clearRideStorage();
+
+    // Explicitly fetch nearby drivers for the fresh, default view
+    if (location) {
+      console.log('🔄 Fetching nearby drivers for default view.');
+      setTimeout(() => fetchNearbyDrivers(location.latitude, location.longitude), 500);
     }
 
-    // Force map remount to clear all markers and routes instantly
-    setMapKey(prevKey => prevKey + 1);
+    console.log('✅ App reset to fresh state. Ready for new booking.');
+  }, [location, fetchNearbyDrivers, propHandlePickupChange, propHandleDropoffChange]);
+
+    // Debug monitoring for animation state
+    useEffect(() => {
+      console.log('🔍 ANIMATION STATE DEBUG:', {
+        rideStatus,
+        realTimeNavigationActive,
+        driverLocation: driverLocation ? `SET (${driverLocation.latitude.toFixed(5)}, ${driverLocation.longitude.toFixed(5)})` : 'NULL',
+        displayedDriverLocation: displayedDriverLocation ? `SET (${displayedDriverLocation.latitude.toFixed(5)}, ${displayedDriverLocation.longitude.toFixed(5)})` : 'NULL',
+        dropoffLocation: dropoffLocation ? 'SET' : 'NULL',
+        nearbyDriversCount: nearbyDrivers.length,
+        acceptedDriver: acceptedDriver ? 'SET' : 'NULL',
+        routeCoordsLength: routeCoords.length
+      });
+    }, [rideStatus, realTimeNavigationActive, driverLocation, displayedDriverLocation, dropoffLocation, nearbyDrivers, acceptedDriver, routeCoords]);
     
-    // Clear AsyncStorage in background (non-blocking)
-    AsyncStorage.multiRemove([
-      'currentRideId', 'acceptedDriver', 'rideStatus', 'bookedAt', 'bookingOTP',
-      'statusPollInterval', 'acceptanceTimeout', 'hidePickupAndUserLocation', 'ridePickup', 'rideDropoff',
-      'ridePickupLocation', 'bookedPickupLocation', 'rideDropoffLocation', 'rideRouteCoords', 'rideDistance',
-      'rideTravelTime', 'rideSelectedType', 'rideWantReturn', 'rideEstimatedPrice',
-      'driverLocation', 'driverLocationTimestamp'
-    ]).then(() => {
-      console.log('✅ AsyncStorage cleared - Ready for new booking');
-    }).catch(err => {
-      console.error('Error clearing AsyncStorage:', err);
-    });
+    // Handle close searching popup
+    const handleCloseSearchingPopup = () => {
+      if (!isMountedRef.current) return;
+      
+      console.log('❌ Closing searching popup - showing OTP field only');
+      setShowSearchingPopup(false);
+      setHasClosedSearching(true);
+      setShowOTPInput(true);
+    };
     
-    console.log('✅ App reset to fresh state - All ride data cleared');
-  };
-  
-  // Debug monitoring for animation state
+    // Function to clear all ride-related storage
+    const clearRideStorage = async () => {
+      if (!isMountedRef.current) return;
+      
+      const rideKeys = [
+        'currentRideId', 'acceptedDriver', 'rideStatus', 'bookedAt', 'bookingOTP',
+        'statusPollInterval', 'acceptanceTimeout', 'ridePickup', 'rideDropoff',
+        'ridePickupLocation', 'bookedPickupLocation', 'rideDropoffLocation', 'rideRouteCoords', 'rideDistance',
+        'rideTravelTime', 'rideSelectedType', 'rideWantReturn', 'rideEstimatedPrice',
+        'hidePickupAndUserLocation', 'driverLocation', 'driverLocationTimestamp'
+      ];
+      await AsyncStorage.multiRemove(rideKeys);
+      console.log('🧹 Cleared all ride-related storage');
+    };
+    
+    // Memoize route coordinates to prevent unnecessary re-renders
+    const memoizedRouteCoords = useMemo(() => routeCoords, [routeCoords]);
+    
+    // Handle map interaction
+    const handleMapInteraction = () => {
+      setUserInteractedWithMap(true);
+    };
+
+  // 🔴 CRITICAL: Setup socket event listeners properly
   useEffect(() => {
-    console.log('🔍 ANIMATION STATE DEBUG:', {
-      rideStatus,
-      realTimeNavigationActive,
-      driverLocation: driverLocation ? `SET (${driverLocation.latitude.toFixed(5)}, ${driverLocation.longitude.toFixed(5)})` : 'NULL',
-      displayedDriverLocation: displayedDriverLocation ? `SET (${displayedDriverLocation.latitude.toFixed(5)}, ${displayedDriverLocation.longitude.toFixed(5)})` : 'NULL',
-      dropoffLocation: dropoffLocation ? 'SET' : 'NULL',
-      nearbyDriversCount: nearbyDrivers.length,
-      acceptedDriver: acceptedDriver ? 'SET' : 'NULL',
-      routeCoordsLength: routeCoords.length
-    });
-  }, [rideStatus, realTimeNavigationActive, driverLocation, displayedDriverLocation, dropoffLocation, nearbyDrivers, acceptedDriver, routeCoords]);
-  
-  // Handle close searching popup
-  const handleCloseSearchingPopup = () => {
     if (!isMountedRef.current) return;
-    
-    console.log('❌ Closing searching popup - showing OTP field only');
-    setShowSearchingPopup(false);
-    setHasClosedSearching(true);
-    setShowOTPInput(true);
-  };
-  
-  // Function to clear all ride-related storage
-  const clearRideStorage = async () => {
-    if (!isMountedRef.current) return;
-    
-    const rideKeys = [
-      'currentRideId', 'acceptedDriver', 'rideStatus', 'bookedAt', 'bookingOTP',
-      'statusPollInterval', 'acceptanceTimeout', 'ridePickup', 'rideDropoff',
-      'ridePickupLocation', 'bookedPickupLocation', 'rideDropoffLocation', 'rideRouteCoords', 'rideDistance',
-      'rideTravelTime', 'rideSelectedType', 'rideWantReturn', 'rideEstimatedPrice',
-      'hidePickupAndUserLocation', 'driverLocation', 'driverLocationTimestamp'
-    ];
-    await AsyncStorage.multiRemove(rideKeys);
-    console.log('🧹 Cleared all ride-related storage');
-  };
-  
-  // Memoize route coordinates to prevent unnecessary re-renders
-  const memoizedRouteCoords = useMemo(() => routeCoords, [routeCoords]);
-  
-  // Handle map interaction
-  const handleMapInteraction = () => {
-    setUserInteractedWithMap(true);
-  };
-  
+
+    console.log('🔌 Setting up socket event handlers');
+
+    // Clean up any existing listeners first
+    socket.off("rideAccepted");
+    socket.off("rideAcceptedBroadcast");
+    socket.off("rideCompleted");
+    socket.off("rideCompletedBroadcast");
+    socket.off("driverCompletedRide");
+    socket.off("paymentProcessed");
+    socket.off("otpVerified");
+    socket.off("rideStarted");
+    socket.off("driverStartedRide");
+
+    // Set up new listeners
+    socket.on("rideCompleted", handleRideCompleted);
+    socket.on("rideCompletedBroadcast", handleRideCompleted);
+    socket.on("driverCompletedRide", handleRideCompleted);
+    socket.on("paymentProcessed", handleRideCompleted);
+    socket.on("otpVerified", handleOtpVerified);
+    socket.on("rideStarted", handleOtpVerified);
+    socket.on("driverStartedRide", handleOtpVerified);
+
+    return () => {
+      // Clean up on unmount
+      socket.off("rideCompleted", handleRideCompleted);
+      socket.off("rideCompletedBroadcast", handleRideCompleted);
+      socket.off("driverCompletedRide", handleRideCompleted);
+      socket.off("paymentProcessed", handleRideCompleted);
+      socket.off("otpVerified", handleOtpVerified);
+      socket.off("rideStarted", handleOtpVerified);
+      socket.off("driverStartedRide", handleOtpVerified);
+    };
+  }, [handleRideCompleted, handleOtpVerified]);
+
 
   return (
   <View style={styles.container}>
@@ -3547,98 +3648,106 @@ const handleRideAccepted = (data: any) => {
                 )}
                 <View style={styles.inputRow}>
                   <View style={styles.inputWrapper}>
-                    <TouchableOpacity onPress={handleAutofillDropoff} style={styles.inputIconContainer}>
-                      <MaterialIcons name="my-location" size={20} color="#F44336" />
+                      <TouchableOpacity onPress={handleAutofillDropoff} style={styles.inputIconContainer}>
+                        <MaterialIcons name="my-location" size={20} color="#F44336" />
+                      </TouchableOpacity>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Enter dropoff location"
+                        value={dropoff}
+                        onChangeText={handleDropoffChange}
+                        placeholderTextColor="#999"
+                      />
+                    </View>
+                    <TouchableOpacity
+                      style={styles.selectMapButton}
+                      onPress={() => {
+                        if (showDropoffSelector) {
+                          handleMapSelectionDone(false);
+                        }
+                        setShowDropoffSelector((prev) => !prev);
+                        setShowPickupSelector(false);
+                      }}
+                    >
+                      <Text style={styles.selectMapButtonText}>
+                        {showDropoffSelector ? 'Done' : 'Select on Map'}
+                      </Text>
                     </TouchableOpacity>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter dropoff location"
-                      value={dropoff}
-                      onChangeText={handleDropoffChange}
-                      placeholderTextColor="#999"
-                    />
                   </View>
+                  {showDropoffSuggestions && (
+                    <View style={styles.suggestionsWrapper}>
+                      <ScrollView
+                        style={styles.suggestionsContainer}
+                        keyboardShouldPersistTaps="handled"
+                      >
+                        {dropoffLoading ? (
+                          <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="small" color="#4CAF50" />
+                            <Text style={styles.loadingText}>Loading suggestions...</Text>
+                          </View>
+                        ) : suggestionsError ? (
+                          <View style={styles.errorContainer}>
+                            <Text style={styles.errorText}>{suggestionsError}</Text>
+                          </View>
+                        ) : dropoffSuggestions.length > 0 ? (
+                          dropoffSuggestions.map((item) => (
+                            renderSuggestionItem(item, () => selectDropoffSuggestion(item), item.id)
+                          ))
+                        ) : (
+                          <View style={styles.noSuggestionsContainer}>
+                            <Text style={styles.noSuggestionsText}>No suggestions found</Text>
+                          </View>
+                        )}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.actionButtonsContainer}>
                   <TouchableOpacity
-                    style={styles.selectMapButton}
-                    onPress={() => {
-                      if (showDropoffSelector) {
-                        handleMapSelectionDone(false);
-                      }
-                      setShowDropoffSelector((prev) => !prev);
-                      setShowPickupSelector(false);
-                    }}
+                    style={styles.cancelButton}
+                    onPress={handleCancel}
                   >
-                    <Text style={styles.selectMapButtonText}>
-                      {showDropoffSelector ? 'Done' : 'Select on Map'}
-                    </Text>
+                    <Text style={styles.cancelButtonText}>CANCEL</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.bookRideButton,
+                      isBookRideButtonEnabled ? styles.enabledBookRideButton : styles.disabledBookRideButton,
+                    ]}
+                    onPress={handleBookRide}
+                    disabled={!isBookRideButtonEnabled}
+                  >
+                    <Text style={styles.bookRideButtonText}>BOOK RIDE</Text>
                   </TouchableOpacity>
                 </View>
-                {showDropoffSuggestions && (
-                  <View style={styles.suggestionsWrapper}>
-                    <ScrollView
-                      style={styles.suggestionsContainer}
-                      keyboardShouldPersistTaps="handled"
-                    >
-                      {dropoffLoading ? (
-                        <View style={styles.loadingContainer}>
-                          <ActivityIndicator size="small" color="#4CAF50" />
-                          <Text style={styles.loadingText}>Loading suggestions...</Text>
-                        </View>
-                      ) : suggestionsError ? (
-                        <View style={styles.errorContainer}>
-                          <Text style={styles.errorText}>{suggestionsError}</Text>
-                        </View>
-                      ) : dropoffSuggestions.length > 0 ? (
-                        dropoffSuggestions.map((item) => (
-                          renderSuggestionItem(item, () => selectDropoffSuggestion(item), item.id)
-                        ))
-                      ) : (
-                        <View style={styles.noSuggestionsContainer}>
-                          <Text style={styles.noSuggestionsText}>No suggestions found</Text>
-                        </View>
-                      )}
-                    </ScrollView>
-                  </View>
-                )}
               </View>
-              <View style={styles.actionButtonsContainer}>
-                <TouchableOpacity
-                  style={styles.cancelButton}
-                  onPress={handleCancel}
-                >
-                  <Text style={styles.cancelButtonText}>CANCEL</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.bookRideButton,
-                    isBookRideButtonEnabled ? styles.enabledBookRideButton : styles.disabledBookRideButton,
-                  ]}
-                  onPress={handleBookRide}
-                  disabled={!isBookRideButtonEnabled}
-                >
-                  <Text style={styles.bookRideButtonText}>BOOK RIDE</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        )}
+            </KeyboardAvoidingView>
+          )}
+          
+        
         
         {/* Minimal OTP Input at Bottom */}
-        {showOTPInput && rideStatus !== "started" && (
-          <View style={styles.minimalOtpContainer}>
-            <View style={styles.otpRow}>
-              <Text style={styles.otpLabel}>Your OTP:</Text>
-              <Text style={styles.otpValue}>{bookingOTP}</Text>
-            </View>
-            <View style={styles.driverRow}>
-              <Text style={styles.driverLabel}>Your Driver:</Text>
-              <Text style={styles.driverName}>{driverName || 'Driver'}</Text>
-              <TouchableOpacity style={styles.callButton} onPress={handlePhoneCall}>
-                <MaterialIcons name="phone" size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+
+{showOTPInput && rideStatus !== "started" && acceptedDriver && (
+  <View style={styles.minimalOtpContainer}>
+    <View style={styles.otpRow}>
+      <Text style={styles.otpLabel}>Your OTP:</Text>
+      <Text style={styles.otpValue}>{bookingOTP}</Text>
+    </View>
+    <View style={styles.driverRow}>
+      <Text style={styles.driverLabel}>Your Driver:</Text>
+      <Text style={styles.driverName}>{acceptedDriver.name || driverName || 'Driver'}</Text>
+      <TouchableOpacity style={styles.callButton} onPress={handlePhoneCall}>
+        <MaterialIcons name="phone" size={20} color="#FFFFFF" />
+      </TouchableOpacity>
+    </View>
+    {rideStatus === "arrived" && (
+      <View style={styles.arrivedContainer}>
+        <Text style={styles.arrivedText}>Driver has arrived at your location!</Text>
+      </View>
+    )}
+  </View>
+)}
       </>
     )}
     
@@ -3707,83 +3816,42 @@ const handleRideAccepted = (data: any) => {
       </View>
     </Modal>
     
-    {/* Bill Modal */}
-    <Modal
-      animationType="slide"
-      transparent={true}
-      visible={showBillModal}
-      onRequestClose={handleBillModalClose}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Ride Bill</Text>
-            <TouchableOpacity onPress={handleBillModalClose}>
-              <MaterialIcons name="close" size={24} color="#666" />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.modalContent}>
-            <View style={styles.modalIconContainer}>
-              <Ionicons name="receipt" size={60} color="#4CAF50" />
-            </View>
-            <Text style={styles.modalMessage}>
-              Thank you for choosing EAZY GO!
-            </Text>
-            <Text style={styles.modalSubMessage}>
-              Your ride has been completed.
-            </Text>
-            <View style={styles.billDetailsContainer}>
-              <View style={styles.billRow}>
-                <Text style={styles.billLabel}>Driver Name:</Text>
-                <Text style={styles.billValue}>{billDetails.driverName}</Text>
-              </View>
-              <View style={styles.billRow}>
-                <Text style={styles.billLabel}>Vehicle Type:</Text>
-                <Text style={styles.billValue}>{billDetails.vehicleType}</Text>
-              </View>
-              <View style={styles.billRow}>
-                <Text style={styles.billLabel}>Distance:</Text>
-                <Text style={styles.billValue}>{billDetails.distance}</Text>
-              </View>
-              <View style={styles.billRow}>
-                <Text style={styles.billLabel}>Travel Time:</Text>
-                <Text style={styles.billValue}>{billDetails.travelTime}</Text>
-              </View>
-              <View style={styles.billDivider} />
-              <View style={styles.billRow}>
-                <Text style={styles.billTotalLabel}>Total Amount:</Text>
-                <Text style={styles.billTotalValue}>₹{billDetails.charge}</Text>
-              </View>
-            </View>
-          </View>
-          <View style={styles.modalButtons}>
-            <TouchableOpacity
-              style={styles.modalConfirmButton}
-              onPress={handleBillModalClose}
-            >
-              <Text style={styles.modalConfirmButtonText}>OK</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
+<BillingAlert
+  visible={showBillModal}
+  onClose={handleBillModalClose}
+  billing={billingData || {
+    distance: '0 km',
+    duration: 'N/A',
+    fareBreakdown: {
+      baseFare: 0,
+      distanceCharge: 0,
+      timeCharge: 0,
+      surcharge: 0
+    },
+    totalAmount: 0,
+    walletBalance: 0,
+    driverName: 'Driver',
+    vehicleType: 'bike'
+  }}
+/>
     
     {/* Searching Overlay */}
-    {showSearchingPopup && (
-      <View style={styles.searchingOverlay}>
-        <View style={styles.searchingHeader}>
-          <Text style={styles.searchingTitle}>Searching for Driver</Text>
-          <TouchableOpacity onPress={handleCloseSearchingPopup}>
-            <MaterialIcons name="close" size={24} color="#333" />
-          </TouchableOpacity>
-        </View>
-        <SearchingAnimation /> 
-        <Text style={styles.searchingMessage}>PLEASE HOLD! WE ARE SEARCHING FOR NEARBY DRIVER FOR YOU.</Text>
-        <TouchableOpacity style={styles.cancelRideButton} onPress={handleCancelRide}>
-          <Text style={styles.cancelRideButtonText}>Cancel Ride</Text>
-        </TouchableOpacity>
-      </View>
-    )}
+
+{showSearchingPopup && rideStatus === "searching" && (
+  <View style={styles.searchingOverlay}>
+    <View style={styles.searchingHeader}>
+      <Text style={styles.searchingTitle}>Searching for Driver</Text>
+      <TouchableOpacity onPress={handleCloseSearchingPopup}>
+        <MaterialIcons name="close" size={24} color="#333" />
+      </TouchableOpacity>
+    </View>
+    <SearchingAnimation /> 
+    <Text style={styles.searchingMessage}>PLEASE HOLD! WE ARE SEARCHING FOR NEARBY DRIVER FOR YOU.</Text>
+    <TouchableOpacity style={styles.cancelRideButton} onPress={handleCancelRide}>
+      <Text style={styles.cancelRideButtonText}>Cancel Ride</Text>
+    </TouchableOpacity>
+  </View>
+)}
   </View>
 );
 
@@ -4060,6 +4128,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     flex: 1,
+  },
+  arrivedContainer: {
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  arrivedText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   callButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',

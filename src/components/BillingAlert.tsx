@@ -7,7 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Dimensions,
-  Animated,
+  ActivityIndicator,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
@@ -37,13 +37,60 @@ interface BillingAlertProps {
   onViewDetails?: () => void;
 }
 
+// Default empty billing data
+const defaultBillingData: BillingData = {
+  distance: '0 km',
+  duration: '0 mins',
+  fareBreakdown: {
+    baseFare: 0,
+    distanceCharge: 0,
+    timeCharge: 0,
+    surcharge: 0
+  },
+  totalAmount: 0,
+  walletBalance: 0,
+  driverName: 'Driver',
+  vehicleType: 'vehicle'
+};
+
 const BillingAlert: React.FC<BillingAlertProps> = ({
   visible,
   onClose,
   billing,
   onViewDetails,
 }) => {
-  if (!billing) return null;
+  // Use billing data or default
+  const billData = billing || defaultBillingData;
+  
+  // If no billing data and modal is visible, show loading or basic message
+  if (visible && !billing) {
+    return (
+      <Modal
+        visible={visible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={onClose}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.alertContainer}>
+            <View style={styles.header}>
+              <View style={styles.successIcon}>
+                <MaterialIcons name="hourglass-empty" size={60} color="#FFFFFF" />
+              </View>
+              <Text style={styles.title}>Processing Bill...</Text>
+              <ActivityIndicator size="large" color="#4CAF50" style={{ marginTop: 20 }} />
+            </View>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={onClose}
+            >
+              <Text style={styles.primaryButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
 
   const formatDistance = (dist: number | string): string => {
     if (typeof dist === 'string') return dist;
@@ -91,7 +138,7 @@ const BillingAlert: React.FC<BillingAlertProps> = ({
                   <MaterialIcons name="straighten" size={18} color="#666666" />
                   <Text style={styles.label}>Distance Travelled</Text>
                 </View>
-                <Text style={styles.value}>{formatDistance(billing.distance)}</Text>
+                <Text style={styles.value}>{formatDistance(billData.distance)}</Text>
               </View>
 
               <View style={styles.row}>
@@ -99,27 +146,27 @@ const BillingAlert: React.FC<BillingAlertProps> = ({
                   <MaterialIcons name="access-time" size={18} color="#666666" />
                   <Text style={styles.label}>Duration</Text>
                 </View>
-                <Text style={styles.value}>{formatDuration(billing.duration)}</Text>
+                <Text style={styles.value}>{formatDuration(billData.duration)}</Text>
               </View>
 
-              {billing.driverName && (
+              {billData.driverName && (
                 <View style={styles.row}>
                   <View style={styles.iconLabelContainer}>
                     <MaterialIcons name="person" size={18} color="#666666" />
                     <Text style={styles.label}>Driver</Text>
                   </View>
-                  <Text style={styles.value}>{billing.driverName}</Text>
+                  <Text style={styles.value}>{billData.driverName}</Text>
                 </View>
               )}
 
-              {billing.vehicleType && (
+              {billData.vehicleType && (
                 <View style={styles.row}>
                   <View style={styles.iconLabelContainer}>
                     <MaterialIcons name="directions-car" size={18} color="#666666" />
                     <Text style={styles.label}>Vehicle Type</Text>
                   </View>
                   <Text style={styles.value}>
-                    {billing.vehicleType.charAt(0).toUpperCase() + billing.vehicleType.slice(1)}
+                    {billData.vehicleType.charAt(0).toUpperCase() + billData.vehicleType.slice(1)}
                   </Text>
                 </View>
               )}
@@ -133,23 +180,23 @@ const BillingAlert: React.FC<BillingAlertProps> = ({
 
               <View style={styles.row}>
                 <Text style={styles.label}>Base Fare</Text>
-                <Text style={styles.value}>{formatCurrency(billing.fareBreakdown.baseFare)}</Text>
+                <Text style={styles.value}>{formatCurrency(billData.fareBreakdown.baseFare)}</Text>
               </View>
 
               <View style={styles.row}>
                 <Text style={styles.label}>Distance Charge</Text>
-                <Text style={styles.value}>{formatCurrency(billing.fareBreakdown.distanceCharge)}</Text>
+                <Text style={styles.value}>{formatCurrency(billData.fareBreakdown.distanceCharge)}</Text>
               </View>
 
               <View style={styles.row}>
                 <Text style={styles.label}>Time Charge</Text>
-                <Text style={styles.value}>{formatCurrency(billing.fareBreakdown.timeCharge)}</Text>
+                <Text style={styles.value}>{formatCurrency(billData.fareBreakdown.timeCharge)}</Text>
               </View>
 
-              {billing.fareBreakdown.surcharge && billing.fareBreakdown.surcharge > 0 && (
+              {(billData.fareBreakdown.surcharge || 0) > 0 && (
                 <View style={styles.row}>
                   <Text style={styles.label}>Surcharge</Text>
-                  <Text style={styles.value}>{formatCurrency(billing.fareBreakdown.surcharge)}</Text>
+                  <Text style={styles.value}>{formatCurrency(billData.fareBreakdown.surcharge)}</Text>
                 </View>
               )}
             </View>
@@ -159,7 +206,7 @@ const BillingAlert: React.FC<BillingAlertProps> = ({
             {/* Total Amount */}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total Amount</Text>
-              <Text style={styles.totalValue}>{formatCurrency(billing.totalAmount)}</Text>
+              <Text style={styles.totalValue}>{formatCurrency(billData.totalAmount)}</Text>
             </View>
 
             {/* Wallet Credit Notification */}
@@ -167,10 +214,10 @@ const BillingAlert: React.FC<BillingAlertProps> = ({
               <MaterialIcons name="account-balance-wallet" size={24} color="#2E7D32" />
               <View style={styles.walletTextContainer}>
                 <Text style={styles.walletText}>
-                  {formatCurrency(billing.totalAmount)} credited to your wallet
+                  {`${formatCurrency(billData.totalAmount)} will be paid from your wallet`}
                 </Text>
                 <Text style={styles.walletBalance}>
-                  New Balance: {formatCurrency(billing.walletBalance)}
+                  {`Current Balance: ${formatCurrency(billData.walletBalance)}`}
                 </Text>
               </View>
             </View>
@@ -178,23 +225,11 @@ const BillingAlert: React.FC<BillingAlertProps> = ({
 
           {/* Action Buttons */}
           <View style={styles.buttonContainer}>
-            {onViewDetails && (
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={() => {
-                  onClose();
-                  onViewDetails();
-                }}
-              >
-                <Text style={styles.secondaryButtonText}>View Details</Text>
-              </TouchableOpacity>
-            )}
-
             <TouchableOpacity
-              style={[styles.primaryButton, !onViewDetails && styles.fullWidthButton]}
+              style={styles.primaryButton}
               onPress={onClose}
             >
-              <Text style={styles.primaryButtonText}>Done</Text>
+              <Text style={styles.primaryButtonText}>Pay & Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -341,7 +376,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 20,
     paddingVertical: 20,
-    gap: 12,
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
   },
@@ -357,25 +391,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
-  fullWidthButton: {
-    flex: 1,
-  },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: 'bold',
-  },
-  secondaryButton: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-  },
-  secondaryButtonText: {
-    color: '#4CAF50',
     fontSize: 17,
     fontWeight: 'bold',
   },
