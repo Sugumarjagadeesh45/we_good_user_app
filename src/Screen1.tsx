@@ -116,7 +116,7 @@ export default function Screen1() {
     const [registrationCompleted, setRegistrationCompleted] = useState(false);
 
   const getBackendUrls = () => {
-    const baseUrl = 'https://backend-besafe.onrender.com';
+    const baseUrl = getBackendUrl();
     return {
       register: `${baseUrl}/api/auth/register`,
       profile: `${baseUrl}/api/users/profile`,

@@ -1,16 +1,13 @@
 import { Platform } from 'react-native';
 
 // -----------------------------------------
-// 🏠 LOCALHOST CONFIGURATION
+// 🌐 LIVE SERVER CONFIGURATION
 // -----------------------------------------
 
-const LOCAL_IP = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
-const PORT = '5001';
+// Base URL for API calls - Live production server
+export const API_BASE_URL = 'https://backend-besafe.onrender.com';
 
-// Base URL for API calls
-export const API_BASE_URL = `http://${LOCAL_IP}:${PORT}`;
-
-console.log("🚀 User App API configured for LOCALHOST:", API_BASE_URL);
+console.log("🚀 User App API configured for LIVE SERVER:", API_BASE_URL);
 
 // Add this function to get your server URL for map tiles
 export const getMapTileUrl = () => {

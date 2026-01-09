@@ -360,6 +360,12 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   const otpVerifiedAlertShownRef = useRef(otpVerifiedAlertShown);
   const mapZoomLevelRef = useRef(mapZoomLevel);
   const followDriverRef = useRef(followDriver);
+  const nearbyDriversRef = useRef(nearbyDrivers);
+  
+  // Update refs when state changes
+  useEffect(() => {
+    nearbyDriversRef.current = nearbyDrivers;
+  }, [nearbyDrivers]);
   
   // Update refs when state changes
   useEffect(() => {
@@ -905,11 +911,15 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
       }
       
       // Fallback to driver location from accepted driver data
-      if (acceptedDriver.driverId) {
-        return [{ 
-          ...acceptedDriver, 
-          _isActiveDriver: true 
-        }];
+      if (acceptedDriver.driverId && acceptedDriver.location && acceptedDriver.location.coordinates) {
+        const [lng, lat] = acceptedDriver.location.coordinates;
+        // Only show if coordinates are valid (not 0,0)
+        if (lat !== 0 && lng !== 0) {
+          return [{ 
+            ...acceptedDriver, 
+            _isActiveDriver: true 
+          }];
+        }
       }
       return [];
     }
@@ -1448,13 +1458,27 @@ const handleOtpVerified = useCallback(async (data: any) => {
   setDriverMobile(mobile);
   setCurrentRideId(data.rideId);
 
+  // Attempt to find driver location from nearby drivers if not provided in payload
+  let driverLat = data.driverLat || data.lat || 0;
+  let driverLng = data.driverLng || data.lng || 0;
+
+  if (driverLat === 0 && driverLng === 0) {
+      // Try to find in nearby drivers using ref to access current state
+      const existingDriver = nearbyDriversRef.current.find(d => d.driverId === data.driverId);
+      if (existingDriver && existingDriver.location && existingDriver.location.coordinates) {
+          console.log('📍 Found driver in nearby list, using known location');
+          driverLng = existingDriver.location.coordinates[0];
+          driverLat = existingDriver.location.coordinates[1];
+      }
+  }
+
   const acceptedDriverData: DriverType = {
     driverId: data.driverId,
     name: data.driverName || 'Driver',
     driverMobile: mobile ||data.driverPhone || data.driverMobile || data.phone || data.phoneNumber,
     location: {
       // FIX: Always use driver's current location, NOT pickup location
-      coordinates: [data.driverLng || data.lng || 0, data.driverLat || data.lat || 0]
+      coordinates: [driverLng, driverLat]
     },
     vehicleType: data.vehicleType || selectedRideType,
     status: "onTheWay",
@@ -1472,8 +1496,7 @@ const handleOtpVerified = useCallback(async (data: any) => {
   setNearbyDriversCount(0);
 
   // 🔴 CRITICAL FIX: Use driver's current location from acceptance data
-  const driverLat = data.driverLat || data.lat || 0;
-  const driverLng = data.driverLng || data.lng || 0;
+  // (We already calculated driverLat/Lng above)
   
   if (driverLat !== 0 && driverLng !== 0) {
     const driverLoc = {
@@ -1481,10 +1504,9 @@ const handleOtpVerified = useCallback(async (data: any) => {
       longitude: driverLng
     };
     
-    console.log('📍 INITIAL DRIVER LOCATION SET (FROM DRIVER COORDS):', {
+    console.log('📍 INITIAL DRIVER LOCATION SET:', {
       latitude: driverLoc.latitude,
-      longitude: driverLoc.longitude,
-      source: 'driverLat/Lng from acceptance'
+      longitude: driverLoc.longitude
     });
     
     setDriverLocation(driverLoc);
@@ -1502,19 +1524,17 @@ const handleOtpVerified = useCallback(async (data: any) => {
     
     AsyncStorage.setItem('driverLocation', JSON.stringify(driverLoc));
   } else {
-    console.warn('⚠️ No valid driver coordinates found in acceptance data');
-    console.log('📊 Available data keys:', Object.keys(data));
+    console.warn('⚠️ No valid driver coordinates found in acceptance data or nearby list');
+    console.log('⏳ Waiting for live driver location update...');
     
-    // Fallback: Use pickup location temporarily until real location arrives
-    if (pickupLocation) {
-      console.log('🔄 Using pickup location as temporary fallback');
-      const tempDriverLoc = {
-        latitude: pickupLocation.latitude,
-        longitude: pickupLocation.longitude
-      };
-      setDriverLocation(tempDriverLoc);
-      setDisplayedDriverLocation(tempDriverLoc);
-    }
+    // Request immediate driver location update
+    setTimeout(() => {
+      socket.emit('requestDriverLocation', { 
+        rideId: data.rideId,
+        driverId: data.driverId,
+        priority: 'high'
+      });
+    }, 100);
   }
 
   AsyncStorage.setItem('currentRideId', data.rideId);

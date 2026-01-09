@@ -96,28 +96,20 @@ LanguageProvider
 
 ## Backend Configuration
 
-### Current Setup: Dual Configuration (API vs Socket)
+### Current Setup: Live Production Server
 
-Backend connections use **different configurations** for API calls vs Socket.IO:
+The app is configured to use the **live production server** for all backend connections:
 
-**Files**:
-- [src/socket.ts](src/socket.ts) - Socket.IO connection (uses ngrok)
-- [src/util/backendConfig.tsx](src/util/backendConfig.tsx) - API base URL (uses localhost)
+**Configuration Files**:
+- [src/socket.ts](src/socket.ts) - Socket.IO connection
+- [src/util/backendConfig.tsx](src/util/backendConfig.tsx) - API base URL
 
-**API Endpoints (localhost)**:
-- **Android Emulator**: `http://10.0.2.2:5001`
-- **iOS Simulator**: `http://localhost:5001`
+**Live Server URL**: `https://backend-besafe.onrender.com`
 
-The API URL is automatically determined based on platform:
-```typescript
-const IP = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
-const PORT = '5001';
-```
-
-**Socket.IO Connection (ngrok)**:
-- Uses ngrok tunnel for real device testing: `https://2175e392da42.ngrok-free.app`
-- Update this URL in [socket.ts](src/socket.ts) when ngrok URL changes
-- Ngrok is used because Socket.IO requires public URL for real device testing
+Both API calls and Socket.IO connections use the same live server URL. This configuration works for:
+- Android emulators and physical devices
+- iOS simulators and physical devices
+- Development and production environments
 
 ### Backend API Endpoints
 
@@ -269,7 +261,7 @@ src/
 ├── Screen1/
 │   ├── Menuicon/            # Menu, profile, settings, wallet
 │   ├── Taxibooking/         # Ride booking components
-│   │   └── TaxiContent.tsx  # Main taxi booking screen (13k+ lines)
+│   │   └── TaxiContent.tsx  # Main taxi booking screen (~4,400 lines)
 │   ├── Shopping/            # E-commerce components
 │   └── Bellicon/            # Notifications
 └── types/                   # TypeScript type definitions
@@ -278,16 +270,13 @@ src/
 ## Common Gotchas
 
 ### TaxiContent.tsx Size
-[TaxiContent.tsx](src/Screen1/Taxibooking/TaxiContent.tsx) is extremely large (13,000+ lines). When making changes:
+[TaxiContent.tsx](src/Screen1/Taxibooking/TaxiContent.tsx) is large (~4,400 lines). When making changes:
 - Read the file first to understand context
 - Make targeted edits rather than full rewrites
 - Test thoroughly after any modifications
-- Refer to [TAXICONTENT_IMPLEMENTATION_GUIDE.md](TAXICONTENT_IMPLEMENTATION_GUIDE.md) for wallet integration details
 
-### Platform-Specific Backend URLs
-Always use the `getBackendUrl()` function from [backendConfig.tsx](src/util/backendConfig.tsx) rather than hardcoding URLs. It automatically handles Android emulator's special IP address (`10.0.2.2`).
-
-**Important**: Socket.IO uses a separate ngrok URL configured in [socket.ts](src/socket.ts). This URL must be manually updated when the ngrok tunnel expires or changes.
+### Backend URL Usage
+Always use the `getBackendUrl()` function from [backendConfig.tsx](src/util/backendConfig.tsx) rather than hardcoding URLs. The app is configured to use the live production server `https://backend-besafe.onrender.com` for all API calls and Socket.IO connections.
 
 ### AsyncStorage Token Keys
 The app historically used both `authToken` and `userToken` keys. Always check both when retrieving tokens:
@@ -319,7 +308,7 @@ cd ..
 ## Testing Workflow
 
 ### Wallet Integration Testing
-1. Start backend server on localhost:5001
+1. Ensure live backend server is running at https://backend-besafe.onrender.com
 2. Launch app (check console for "Wallet balance fetched")
 3. Open menu → verify balance displays
 4. Complete a test ride → verify billing alert appears
@@ -331,33 +320,11 @@ cd ..
 3. Driver icon should rotate based on direction
 4. Small movements (<5m) should be filtered out
 
-## Documentation Files
+## Critical Documentation
 
-Several implementation guides exist for specific features:
-- [ride_booking_note.md](ride_booking_note.md) - **Critical**: Vehicle type-based driver alert system requirements
-
-**Note**: Other documentation files referenced in git status have been deleted:
-- QUICK_REFERENCE.md
-- IMPLEMENTATION_SUMMARY.md
-- TAXICONTENT_IMPLEMENTATION_GUIDE.md
-- WALLET_DEBUGGING_GUIDE.md
-- RIDE_COMPLETION_DEBUGGING.md
-- GOOGLE_MAPS_OPTIMIZATION_COMPLETE.md
-- TESTING_GUIDE.md
-
-If you need information from these guides, they may exist in git history.
-
-## Recent Changes
-
-### Animation Improvements (Historical)
-Three critical animation fixes were previously applied to achieve Uber/Ola/Rapido-level smoothness:
-
-1. **Animation Timing Synchronization**: Driver marker animation matches update interval (1000ms)
-2. **AnimatedRegion Coordinate Extraction**: Proper coordinate passing to Marker.Animated component
-3. **Polyline Rendering Optimization**: Stable key and geodesic rendering for flicker-free route updates
-
-Driver animations are now handled by [driverAnimationHelper.ts](src/utils/driverAnimationHelper.ts) with GPS jitter filtering and smooth rotation.
-
-### Current Development Focus
-- Vehicle type-based driver filtering system (see [ride_booking_note.md](ride_booking_note.md))
-- Shopping features with Enhanced components (EnhancedBuying, EnhancedCart, EnhancedMyOrders)
+**[ride_booking_note.md](ride_booking_note.md)** - Vehicle Type-Based Driver Alert System:
+- Users select vehicle type (`taxi`, `port`, `bike`) during booking
+- Only drivers with matching vehicle type AND online status receive ride alerts
+- Driver `vehicleType` field must NEVER be modified during ride flow
+- All vehicle type comparisons must use lowercase
+- Never hardcode `"taxi"` in ride logic

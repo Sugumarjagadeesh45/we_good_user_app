@@ -18,10 +18,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { RootStackParamList } from '../App';
+import { getBackendUrl } from './util/backendConfig';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-const API_URL = 'https://backend-besafe.onrender.com/api/auth';
+const API_URL = `${getBackendUrl()}/api/auth`;
 
 const callBackend = async (endpoint: string, data: any, timeout = 5000) => {
   return await axios.post(`${API_URL}${endpoint}`, data, { timeout });
