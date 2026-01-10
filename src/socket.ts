@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 //  SOCKET CONFIGURATION (LIVE SERVER)
 // -----------------------------------------
 // Use live production server for socket connections (driver/user location tracking)
-const SOCKET_URL = 'https://backend-besafe.onrender.com';
+const SOCKET_URL = 'https://taxi.webase.co.in';
 
 console.log('🔗 Connecting Socket to Live Server:', SOCKET_URL);
 

@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 // -----------------------------------------
 
 // Base URL for API calls - Live production server
-export const API_BASE_URL = 'https://backend-besafe.onrender.com';
+export const API_BASE_URL = 'https://taxi.webase.co.in';
 
 console.log("🚀 User App API configured for LIVE SERVER:", API_BASE_URL);
 

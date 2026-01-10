@@ -894,54 +894,62 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
     }
   }, [currentRideId, acceptedDriver, rideStatus, pulseAnimation]);
 
-  // Enhanced function to determine which drivers to show on map - FIXED TO PREVENT UNWANTED MARKERS
-  const getDriversToShow = useCallback(() => {
-    if (!isMountedRef.current) return [];
 
-    // During active ride, show ONLY the accepted driver
-    if (currentRideId && acceptedDriver) {
-      console.log('🚗 ACTIVE RIDE: Showing only accepted driver with live updates');  
-      
-      // If we have displayed driver location, use that for smooth animation
-      if (displayedDriverLocation && acceptedDriver.driverId) {
-        return [{ 
-          ...acceptedDriver, 
-          location: { coordinates: [displayedDriverLocation.longitude, displayedDriverLocation.latitude] },          _isActiveDriver: true 
-        }];
-      }
-      
-      // Fallback to driver location from accepted driver data
-      if (acceptedDriver.driverId && acceptedDriver.location && acceptedDriver.location.coordinates) {
-        const [lng, lat] = acceptedDriver.location.coordinates;
-        // Only show if coordinates are valid (not 0,0)
-        if (lat !== 0 && lng !== 0) {
-          return [{ 
-            ...acceptedDriver, 
-            _isActiveDriver: true 
-          }];
-        }
-      }
-      return [];
+  const getDriversToShow = useCallback(() => {
+  if (!isMountedRef.current) return [];
+
+  // During active ride, show ONLY the accepted driver
+  if (currentRideId && acceptedDriver) {
+    console.log('🚗 ACTIVE RIDE: Showing only accepted driver with live updates');  
+    
+    // If we have displayed driver location, use that for smooth animation
+    if (displayedDriverLocation && acceptedDriver.driverId) {
+      return [{ 
+        ...acceptedDriver, 
+        location: { coordinates: [displayedDriverLocation.longitude, displayedDriverLocation.latitude] },          
+        _isActiveDriver: true 
+      }];
     }
     
-    console.log('🔄 NO ACTIVE RIDE: Showing filtered nearby drivers');
-    
-    // Filter valid drivers for non-active ride state
-    // FIXED: Added additional filtering to prevent unwanted markers
-    return nearbyDrivers
-      .filter(driver => 
-        driver && 
-        driver.driverId && 
-        driver.location && 
-        driver.location.coordinates && 
-        driver.location.coordinates.length === 2 &&
-        driver.location.coordinates[0] !== 0 && 
-        driver.location.coordinates[1] !== 0 &&
-        // Additional filter: Only show drivers with proper status
-        (!driver.status || ["Live", "online", "available"].includes(driver.status))
-      )
-      .slice(0, 15); // Limit to prevent too many markers
-  }, [nearbyDrivers, currentRideId, acceptedDriver, selectedRideType, displayedDriverLocation]);
+    // Fallback to driver location from accepted driver data
+    if (acceptedDriver.driverId && acceptedDriver.location && acceptedDriver.location.coordinates) {
+      const [lng, lat] = acceptedDriver.location.coordinates;
+      // Only show if coordinates are valid (not 0,0)
+      if (lat !== 0 && lng !== 0) {
+        return [{ 
+          ...acceptedDriver, 
+          _isActiveDriver: true 
+        }];
+      }
+    }
+    return [];
+  }
+  
+  console.log('🔄 NO ACTIVE RIDE: Showing nearby drivers as', selectedRideType, 'icons');
+  
+  // Filter valid drivers for non-active ride state
+  // ✅ ALL drivers show with selected vehicle type icon
+  const driversToShow = nearbyDrivers
+    .filter(driver => 
+      driver && 
+      driver.driverId && 
+      driver.location && 
+      driver.location.coordinates && 
+      driver.location.coordinates.length === 2 &&
+      driver.location.coordinates[0] !== 0 && 
+      driver.location.coordinates[1] !== 0
+    )
+    .map(driver => ({
+      ...driver,
+      // ✅ ENSURE all drivers use selected vehicle type for icon
+      vehicleType: selectedRideType
+    }))
+    .slice(0, 15); // Limit to prevent too many markers
+  
+  console.log('✅ Drivers to show:', driversToShow.length);
+  return driversToShow;
+}, [nearbyDrivers, currentRideId, acceptedDriver, selectedRideType, displayedDriverLocation]);
+
 
   // Fetch nearby drivers - FIXED TO PREVENT UNWANTED MARKERS
   const fetchNearbyDrivers = (latitude: number, longitude: number) => {
@@ -981,54 +989,65 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   
   // Handle nearby drivers response - FIXED TO PREVENT UNWANTED RED MARKERS
   useEffect(() => {
-    const handleNearbyDriversResponse = (data: { drivers: DriverType[] }) => {
-      if (!isMountedRef.current) return;
-     
-      console.log('📍 Received nearby drivers response:', data.drivers.length, 'drivers');
+
+    
+
+
+    // In handleNearbyDriversResponse function (around line 1050)
+const handleNearbyDriversResponse = (data: { drivers: DriverType[] }) => {
+  if (!isMountedRef.current) return;
+  
+  console.log('📍 Received nearby drivers response:', data.drivers.length, 'drivers');
+  
+  if (!location) {
+    console.log("❌ No location available, can't process drivers");
+    return;
+  }
+  
+  // CRITICAL FIX: During active ride, ignore nearby drivers to prevent unwanted markers
+  if (currentRideId && acceptedDriver) {
+    console.log('🚗 Active ride - IGNORING nearby drivers to prevent unwanted markers');
+    setNearbyDrivers([]);
+    setNearbyDriversCount(0);
+    return;
+  }
+  
+  // ✅ CRITICAL FIX: Show ALL drivers as taxi by default
+  const filteredDrivers = data.drivers
+    .filter(driver => {
+      // Basic validation only - NO VEHICLE TYPE FILTERING
+      if (!driver || !driver.driverId || !driver.location || !driver.location.coordinates) {
+        return false;
+      }
       
-      if (!location) {
-        console.log("❌ No location available, can't process drivers");
-        return;
+      // Skip if status indicates not available
+      if (driver.status && ["offline", "onRide"].includes(driver.status)) {
+        return false;
       }
-     
-      // CRITICAL FIX: During active ride, ignore nearby drivers to prevent unwanted markers
-      if (currentRideId && acceptedDriver) {
-        console.log('🚗 Active ride - IGNORING nearby drivers to prevent unwanted markers');
-        setNearbyDrivers([]);
-        setNearbyDriversCount(0);
-        return;
-      }
-     
-      const filteredDrivers = data.drivers
-        .filter(driver => {
-          // Enhanced filtering to prevent unwanted markers
-          if (!driver || !driver.driverId || !driver.location || !driver.location.coordinates) {
-            return false;
-          }
-          
-          if (driver.status && !["Live", "online", "onRide", "available"].includes(driver.status)) {
-            return false;
-          }
-         
-          const distance = calculateDistance(
-            location.latitude,
-            location.longitude,
-            driver.location.coordinates[1],
-            driver.location.coordinates[0]
-          );
-          return distance <= 20; // Increased to 20km
-        })
-        .sort((a, b) => {
-          const distA = calculateDistance(location.latitude, location.longitude, a.location.coordinates[1], a.location.coordinates[0]);
-          const distB = calculateDistance(location.latitude, location.longitude, b.location.coordinates[1], b.location.coordinates[0]);
-          return distA - distB;
-        })
-        .slice(0, 10);
-     
-      console.log('✅ Filtered drivers count:', filteredDrivers.length);
-      setNearbyDrivers(filteredDrivers);
-      setNearbyDriversCount(filteredDrivers.length);
-    };
+      
+      // Force all drivers to show as selected vehicle type
+      // ✅ OVERRIDE: Show ALL active drivers with the selected vehicle type icon
+      console.log(`✅ Showing driver ${driver.driverId} as ${selectedRideTypeRef.current} icon`);
+      
+      return true;
+    })
+    .map(driver => ({
+      ...driver,
+      // ✅ OVERRIDE: Force vehicle type to match user selection
+      vehicleType: selectedRideTypeRef.current || 'taxi',
+      _isOverridden: true // Mark as overridden for debugging
+    }))
+    .sort((a, b) => {
+      const distA = calculateDistance(location.latitude, location.longitude, a.location.coordinates[1], a.location.coordinates[0]);
+      const distB = calculateDistance(location.latitude, location.longitude, b.location.coordinates[1], b.location.coordinates[0]);
+      return distA - distB;
+    })
+    .slice(0, 10); // Limit to 10 nearest drivers
+  
+  console.log('✅ Filtered drivers count:', filteredDrivers.length);
+  setNearbyDrivers(filteredDrivers);
+  setNearbyDriversCount(filteredDrivers.length);
+};
    
     socket.on("nearbyDriversResponse", handleNearbyDriversResponse);
     return () => {
@@ -1037,16 +1056,25 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
   }, [location, socketConnected, currentRideId, acceptedDriver, selectedRideType]);
   
   // Clear and refetch drivers on vehicle type change
-  useEffect(() => {
-    if (!isMountedRef.current) return;
+// Clear and refetch drivers on vehicle type change
+useEffect(() => {
+  if (!isMountedRef.current) return;
+  
+  if (rideStatus === "idle" && location) {
+    console.log(`🔄 Vehicle type changed to ${selectedRideType} - Refetching and updating icons`);
     
-    if (rideStatus === "idle" && location) {
-      console.log(`🔄 Vehicle type changed to ${selectedRideType} - Clearing and refetching drivers`);
-      setNearbyDrivers([]);
-      setNearbyDriversCount(0);
-      fetchNearbyDrivers(location.latitude, location.longitude);
-    }
-  }, [selectedRideType, rideStatus, location]);
+    // Update existing drivers with new vehicle type
+    setNearbyDrivers(prevDrivers => 
+      prevDrivers.map(driver => ({
+        ...driver,
+        vehicleType: selectedRideType // Update icon type
+      }))
+    );
+    
+    // Also refetch fresh driver data
+    fetchNearbyDrivers(location.latitude, location.longitude);
+  }
+}, [selectedRideType, rideStatus, location]);
   
   // Request location on component mount
   useEffect(() => {
@@ -1431,9 +1459,30 @@ const handleOtpVerified = useCallback(async (data: any) => {
   }, [bookedAt]);
   
 
-
+const fetchDriverDetails = async (driverId) => {
+  try {
+    console.log(`🔍 Fetching driver details for: ${driverId}`);
+    const token = await AsyncStorage.getItem('authToken');
+    const backendUrl = getBackendUrl();
+    
+    const response = await axios.get(
+      `${backendUrl}/api/drivers/get-details/${driverId}`,
+      {
+        headers: { Authorization: `Bearer ${token}` }
+      }
+    );
+    
+    if (response.data?.success) {
+      console.log('✅ Driver details fetched:', response.data);
+      return response.data.driver;
+    }
+  } catch (error) {
+    console.error('❌ Error fetching driver details:', error);
+  }
+  return null;
+};
   
-  const processRideAcceptance = useCallback((data: any) => {
+  const processRideAcceptance = useCallback(async (data: any) => {
   if (!isMountedRef.current) return;
   
   console.log('🎯 PROCESSING RIDE ACCEPTANCE:', data.rideId, data.driverId);
@@ -1452,10 +1501,31 @@ const handleOtpVerified = useCallback(async (data: any) => {
 
   setRideStatus("onTheWay");
   setDriverId(data.driverId);
-  setDriverName(data.driverName || 'Driver');
-  // ✅ ROBUST: Check for all possible phone number keys from backend notes
-  const mobile = data.driverPhone || data.driverMobile || data.phone || data.phoneNumber || 'N/A';
+
+  
+
+    setDriverName(data.driverName || 'Driver');
+  
+  // ✅ ENHANCED: First check socket data, then fetch from backend
+  let mobile = data.driverPhone || data.driverMobile || data.phone || data.phoneNumber;
+  
+  // If no mobile in socket data, fetch from backend
+  if (!mobile || mobile === '') {
+    console.log('📞 No mobile in socket data, fetching from backend...');
+    const driverDetails = await fetchDriverDetails(data.driverId);
+    if (driverDetails) {
+      mobile = driverDetails.phone || driverDetails.phoneNumber || driverDetails.mobile || 'N/A';
+      console.log(`✅ Got driver mobile from backend: ${mobile}`);
+    } else {
+      mobile = 'N/A';
+    }
+  }
+  
   setDriverMobile(mobile);
+
+
+
+
   setCurrentRideId(data.rideId);
 
   // Attempt to find driver location from nearby drivers if not provided in payload
@@ -1472,21 +1542,19 @@ const handleOtpVerified = useCallback(async (data: any) => {
       }
   }
 
-  const acceptedDriverData: DriverType = {
-    driverId: data.driverId,
-    name: data.driverName || 'Driver',
-    driverMobile: mobile ||data.driverPhone || data.driverMobile || data.phone || data.phoneNumber,
-    location: {
-      // FIX: Always use driver's current location, NOT pickup location
-      coordinates: [driverLng, driverLat]
-    },
-    vehicleType: data.vehicleType || selectedRideType,
-    status: "onTheWay",
-    // ✅ ADDED: Populate additional driver details from backend notes
-    vehicleNumber: data.driverVehicleNumber || '',
-    rating: data.driverRating || 0,
-    photoUrl: data.driverPhoto ? `${getBackendUrl()}${data.driverPhoto}` : '',
-  };
+const acceptedDriverData: DriverType = {
+  driverId: data.driverId,
+  name: data.driverName || 'Driver',
+  driverMobile: data.driverPhone || data.driverMobile || data.phone || data.phoneNumber || 'N/A', // Add more fields
+  location: {
+    coordinates: [driverLng, driverLat]
+  },
+  vehicleType: data.vehicleType || selectedRideType,
+  status: "onTheWay",
+  vehicleNumber: data.driverVehicleNumber || '',
+  rating: data.driverRating || 0,
+  photoUrl: data.driverPhoto ? `${getBackendUrl()}${data.driverPhoto}` : '',
+};
 
   console.log('👨‍💼 Setting accepted driver:', acceptedDriverData);
   setAcceptedDriver(acceptedDriverData);
@@ -3469,7 +3537,7 @@ const handleOtpVerified = useCallback(async (data: any) => {
           {location && (
             <>
               <MapView
-                key={mapKey}
+                  key={`${mapKey}-${selectedRideType}`} 
                 ref={mapRef}
                 style={styles.map}
                 initialRegion={{

@@ -15,7 +15,7 @@ import { useAddress } from './AddressContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
-const BASE_URL = 'https://backend-besafe.onrender.com';
+const BASE_URL = 'https://taxi.webase.co.in';
 
 const EnhancedCheckout = () => {
   const navigation = useNavigation();

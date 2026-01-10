@@ -21,7 +21,7 @@ import io from 'socket.io-client';
 
 const { width } = Dimensions.get('window');
 
-const BASE_URL = 'https://backend-besafe.onrender.com';
+const BASE_URL = 'https://taxi.webase.co.in';
 
 const getImageUrl = (imagePath: string | undefined) => {
   if (!imagePath) return 'https://via.placeholder.com/150';

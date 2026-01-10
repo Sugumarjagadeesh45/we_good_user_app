@@ -3,7 +3,7 @@ import { Alert } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = 'https://backend-besafe.onrender.com';
+const BASE_URL = 'https://taxi.webase.co.in';
 
 interface Address {
   id: string;
