@@ -24,6 +24,7 @@ import {
   KeyboardAvoidingView,
   AppState
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import MapView, { Marker, Polyline, Region, PROVIDER_GOOGLE } from 'react-native-maps';
 import Geolocation from '@react-native-community/geolocation';
 import socket from '../../socket';
@@ -241,6 +242,9 @@ interface DriverType {
   driverMobile?: string;
   _lastUpdate?: number;
   _isActiveDriver?: boolean;
+  vehicleNumber?: string;
+  rating?: number | string;
+  photoUrl?: string;
 }
 
 interface TaxiContentProps {
@@ -1252,7 +1256,8 @@ const handleConnect = async () => {
   
 
   
-  // Update OTP verified handler to start continuous location updates
+
+  // Enhanced handleOtpVerified function
 const handleOtpVerified = useCallback(async (data: any) => {
   if (!isMountedRef.current) return;
   
@@ -1267,7 +1272,7 @@ const handleOtpVerified = useCallback(async (data: any) => {
   if (data.rideId === currentRideIdRef.current) {
     console.log('🎯 OTP Verified for current ride!');
     
-    // 🔴 CRITICAL: Update all states
+    // Update all states immediately
     setRideStatus("started");
     setRealTimeNavigationActive(true);
     setShowLocationOverlay(false);
@@ -1280,12 +1285,15 @@ const handleOtpVerified = useCallback(async (data: any) => {
     rideStatusRef.current = "started";
     realTimeNavigationActiveRef.current = true;
     otpVerifiedAlertShownRef.current = true;
-
-    // Store updated status
+    
+    // Force a re-render of the map to update driver markers
+    setMapKey(prev => prev + 1);
+    
+    // Save updated status
     await AsyncStorage.setItem('rideStatus', 'started');
     await AsyncStorage.setItem('hidePickupAndUserLocation', 'true');
     
-    // Show professional OTP verified alert (only once)
+    // Show professional OTP verified alert
     Alert.alert(
       "OTP Verified Successfully!",
       "Your ride is starting now.",
@@ -1298,8 +1306,6 @@ const handleOtpVerified = useCallback(async (data: any) => {
         onDismiss: () => console.log("OTP alert dismissed")
       }
     );
-    
-    console.log('🎯 REAL-TIME NAVIGATION ACTIVATED');
     
     // Start continuous driver location updates
     if (acceptedDriverRef.current && acceptedDriverRef.current.driverId) {
@@ -1350,6 +1356,23 @@ const handleOtpVerified = useCallback(async (data: any) => {
     }
   }
 }, []);
+
+
+
+// Add comprehensive error handling for critical operations
+const handleCriticalError = (error: Error, context: string) => {
+  console.error(`❌ Critical error in ${context}:`, error);
+  
+  // Show user-friendly error message
+  Alert.alert(
+    "Error", 
+    `An error occurred: ${error.message}. Please try refreshing the app.`
+  );
+  
+  // Attempt to recover state
+  resetAppState();
+};
+
 
   // Driver arrival polling
   useEffect(() => {
@@ -1508,20 +1531,26 @@ const fetchDriverDetails = async (driverId) => {
   
   // ✅ ENHANCED: First check socket data, then fetch from backend
   let mobile = data.driverPhone || data.driverMobile || data.phone || data.phoneNumber;
+  let vehicleNumber = data.driverVehicleNumber || data.vehicleNumber;
+  let rating = data.driverRating || data.rating;
+  let photo = data.driverPhoto || data.photoUrl;
   
-  // If no mobile in socket data, fetch from backend
-  if (!mobile || mobile === '') {
-    console.log('📞 No mobile in socket data, fetching from backend...');
+  // If any key details are missing, fetch from backend
+  if (!mobile || !vehicleNumber || !photo) {
+    console.log('🔍 Some driver details missing in socket data, fetching from backend...');
     const driverDetails = await fetchDriverDetails(data.driverId);
+    
     if (driverDetails) {
-      mobile = driverDetails.phone || driverDetails.phoneNumber || driverDetails.mobile || 'N/A';
-      console.log(`✅ Got driver mobile from backend: ${mobile}`);
-    } else {
-      mobile = 'N/A';
+      if (!mobile) mobile = driverDetails.phone || driverDetails.phoneNumber || driverDetails.mobile || 'N/A';
+      if (!vehicleNumber) vehicleNumber = driverDetails.vehicleNumber || '';
+      if (!rating) rating = driverDetails.rating || 0;
+      if (!photo) photo = driverDetails.profilePicture || driverDetails.photoUrl || '';
+      
+      console.log(`✅ Fetched driver details from backend: Mobile=${mobile}, Vehicle=${vehicleNumber}`);
     }
   }
   
-  setDriverMobile(mobile);
+  setDriverMobile(mobile || 'N/A');
 
 
 
@@ -1545,15 +1574,15 @@ const fetchDriverDetails = async (driverId) => {
 const acceptedDriverData: DriverType = {
   driverId: data.driverId,
   name: data.driverName || 'Driver',
-  driverMobile: data.driverPhone || data.driverMobile || data.phone || data.phoneNumber || 'N/A', // Add more fields
+  driverMobile: mobile || 'N/A', // ✅ Use resolved mobile variable
   location: {
     coordinates: [driverLng, driverLat]
   },
   vehicleType: data.vehicleType || selectedRideType,
   status: "onTheWay",
-  vehicleNumber: data.driverVehicleNumber || '',
-  rating: data.driverRating || 0,
-  photoUrl: data.driverPhoto ? `${getBackendUrl()}${data.driverPhoto}` : '',
+  vehicleNumber: vehicleNumber || '', // ✅ Use resolved vehicleNumber
+  rating: rating || 0, // ✅ Use resolved rating
+  photoUrl: photo ? (photo.startsWith('http') ? photo : `${getBackendUrl()}${photo}`) : '', // ✅ Use resolved photo
 };
 
   console.log('👨‍💼 Setting accepted driver:', acceptedDriverData);
@@ -1806,6 +1835,146 @@ const acceptedDriverData: DriverType = {
     }
   }, [propHandlePickupChange, propHandleDropoffChange]);
 
+
+
+  // Define fetchAndStoreUserData as a reusable function
+  const fetchAndStoreUserData = useCallback(async () => {
+    if (!isMountedRef.current) return;
+    
+    try {
+      console.log('🔄 Fetching user data from backend...');
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        console.log('⚠️ No auth token found');
+        return;
+      }
+      
+      const backendUrl = getBackendUrl();
+      const response = await axios.get(`${backendUrl}/api/users/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      console.log('📋 User Profile Response:', response.data);
+      
+      if (response.data?.success && response.data?.user) {
+        const userData = response.data.user;
+        
+        console.log('👤 User Data:', {
+          userId: userData._id,
+          customerId: userData.customerId,
+          name: userData.name,
+          phoneNumber: userData.phoneNumber
+        });
+        
+        // Store user data in multiple formats for compatibility
+        await AsyncStorage.setItem('userData', JSON.stringify(userData));
+        
+        if (userData._id) {
+          await AsyncStorage.setItem('userId', userData._id);
+        }
+        
+        if (userData.customerId) {
+          await AsyncStorage.setItem('customerId', userData.customerId);
+          console.log('✅ Customer ID stored:', userData.customerId);
+        } else if (userData._id) {
+          // Fallback: use _id as customerId
+          await AsyncStorage.setItem('customerId', userData._id);
+          console.log('⚠️ No customerId, using _id as fallback:', userData._id);
+        }
+        
+        if (userData.name) {
+          await AsyncStorage.setItem('userName', userData.name);
+        }
+        
+        if (userData.phoneNumber) {
+          await AsyncStorage.setItem('userMobile', userData.phoneNumber);
+        }
+        
+        console.log('✅ User data stored successfully');
+
+        // Register socket immediately with fresh data
+        // CRITICAL FIX: Join BOTH rooms (customerId and _id) to ensure we receive events
+        if (socket.connected) {
+          const primaryId = userData.customerId || userData._id;
+          if (primaryId) {
+            console.log('🔌 Force-registering socket in fetchAndStoreUserData:', primaryId);
+            socket.emit('registerUser', { userId: primaryId });
+            socket.emit('joinRoom', { userId: primaryId });
+          }
+          
+          if (userData._id && userData._id !== primaryId) {
+            console.log('🔌 Also joining Mongo ID room:', userData._id);
+            socket.emit('joinRoom', { userId: userData._id });
+          }
+        }
+      } else {
+        console.error('❌ Invalid user profile response');
+      }
+    } catch (error) {
+      console.error('❌ Error fetching user data:', error.message);
+    }
+  }, []);
+
+  // Use useFocusEffect to ensure user data is fetched/refreshed every time screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      const checkLoginStatus = async () => {
+        try {
+          const token = await AsyncStorage.getItem('authToken');
+          if (token) {
+            console.log('🔐 Screen focused: fetching profile data and registering socket...');
+            await fetchAndStoreUserData();
+            
+            // Ensure socket is connected
+            if (!socket.connected) {
+                socket.connect();
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error checking login status:', error);
+        }
+      };
+      
+      checkLoginStatus();
+    }, [fetchAndStoreUserData])
+  );
+
+
+// Enhanced socket connection handler
+useEffect(() => {
+  const setupSocketConnection = async () => {
+    // Ensure socket is connected
+    if (!socket.connected) {
+      socket.connect();
+    }
+    
+    // Register user with socket
+    const userId = await AsyncStorage.getItem('customerId') || await AsyncStorage.getItem('userId');
+    if (userId && socket.connected) {
+      socket.emit('registerUser', { userId });
+      socket.emit('joinRoom', { userId });
+      console.log('👤 User re-registered with socket after refresh');
+    }
+    
+    // Request current prices
+    socket.emit('getCurrentPrices');
+  };
+  
+  setupSocketConnection();
+  
+  // Reconnect socket if disconnected
+  const handleReconnect = () => {
+    console.log('🔌 Socket reconnected, re-establishing connection');
+    setupSocketConnection();
+  };
+  
+  socket.on("connect", handleReconnect);
+  return () => {
+    socket.off("connect", handleReconnect);
+  };
+}, []);
+
+
   useEffect(() => {
     recoverRideData();
   }, [recoverRideData]);
@@ -2020,70 +2189,89 @@ const acceptedDriverData: DriverType = {
     };
   }, [currentRideId, rideStatus, acceptedDriver, processRideAcceptance]);
   
-  // User location tracking
-  const sendUserLocationUpdate = useCallback(async (latitude, longitude) => {
+
+  const sendUserLocationWithRetry = useCallback(async (latitude, longitude) => {
+  try {
+    // Use customerId if available, otherwise userId
+    let userId = await AsyncStorage.getItem('customerId');
+    if (!userId) {
+      userId = await AsyncStorage.getItem('userId');
+    }
+    
+    if (!userId || !currentRideId) {
+      console.log('❌ Cannot send location: Missing userId or rideId');
+      return;
+    }
+    
+    console.log(`📍 SENDING USER LOCATION UPDATE: ${latitude}, ${longitude} for ride ${currentRideId}`);
+    
+    // 1. First try socket
+    socket.emit('userLocationUpdate', {
+      userId,
+      rideId: currentRideId,
+      latitude,
+      longitude,
+      timestamp: Date.now()
+    });
+    
+    // 2. Try HTTP API as fallback (with retry logic)
     try {
-      // Use customerId if available, otherwise userId
-      let userId = await AsyncStorage.getItem('customerId');
-      if (!userId) {
-        userId = await AsyncStorage.getItem('userId');
-      }
-      
-      if (!userId || !currentRideId) {
-        console.log('❌ Cannot send location: Missing userId or rideId');
-        return;
-      }
-      
-      console.log(`📍 SENDING USER LOCATION UPDATE: ${latitude}, ${longitude} for ride ${currentRideId}`);
-      socket.emit('userLocationUpdate', {
-        userId,
-        rideId: currentRideId,
-        latitude,
-        longitude,
-        timestamp: Date.now()
-      });
-       
-        const token = await AsyncStorage.getItem('authToken');
-        if (token) {
-          const backendUrl = getBackendUrl();
-          await axios.post(`${backendUrl}/api/users/save-location`, {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        const backendUrl = getBackendUrl();
+        const response = await axios.post(
+          `${backendUrl}/api/users/save-location`, 
+          {
+            userId,
+            rideId: currentRideId,
             latitude,
-            longitude,
-            rideId: currentRideId
-          }, {
+            longitude
+          }, 
+          {
             headers: {
-              Authorization: `Bearer ${token}`
-            }
-          });
-        }
-        console.log('✅ User location update sent successfully');
-      } catch (error) {
-        console.error('❌ Error sending user location update:', error);
-      }
-    }, [currentRideId]);
-    
-    // Continuous location tracking during active rides
-    useEffect(() => {
-      if (!isMountedRef.current) return;
-      
-      let locationInterval;
-      if ((rideStatus === "onTheWay" || rideStatus === "arrived" || rideStatus === "started") && location) {
-        console.log('🔄 Starting continuous user location tracking');
-        locationInterval = setInterval(() => {
-          if (location && isMountedRef.current) {
-            sendUserLocationUpdate(location.latitude, location.longitude);
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            timeout: 5000 // 5 second timeout
           }
-        }, 5000);
+        );
+        console.log('✅ User location update sent successfully via HTTP');
       }
-      
-      return () => {
-        if (locationInterval) {
-          clearInterval(locationInterval);
-          console.log('🛑 Stopped user location tracking');
-        }
-      };
-    }, [rideStatus, location, sendUserLocationUpdate]);
+    } catch (httpError) {
+      console.log('⚠️ HTTP location update failed, but socket may still work:', httpError.message);
+      // Continue even if HTTP fails, socket might still work
+    }
     
+  } catch (error) {
+    console.error('❌ Error sending user location update:', error);
+    // Don't crash the app, just log the error
+  }
+}, [currentRideId]);
+    
+
+
+useEffect(() => {
+  if (!isMountedRef.current) return;
+  
+  let locationInterval;
+  if ((rideStatus === "onTheWay" || rideStatus === "arrived" || rideStatus === "started") && location) {
+    console.log('🔄 Starting continuous user location tracking');
+    locationInterval = setInterval(() => {
+      if (location && isMountedRef.current) {
+        // Use retry version instead
+        sendUserLocationWithRetry(location.latitude, location.longitude);
+      }
+    }, 5000);
+  }
+  
+  return () => {
+    if (locationInterval) {
+      clearInterval(locationInterval);
+      console.log('🛑 Stopped user location tracking');
+    }
+  };
+}, [rideStatus, location, sendUserLocationWithRetry]);
 
     
 
@@ -2174,15 +2362,20 @@ const acceptedDriverData: DriverType = {
   const registerUserRoom = async () => {
     try {
       // Try customerId first, then userId
-      let userId = await AsyncStorage.getItem('customerId');
-      if (!userId) {
-        userId = await AsyncStorage.getItem('userId');
-      }
+      const customerId = await AsyncStorage.getItem('customerId');
+      const userId = await AsyncStorage.getItem('userId');
       
-      if (userId && socket.connected) {
-        console.log('👤 Registering user with socket room:', userId);
-        socket.emit('registerUser', { userId });
-        socket.emit('joinRoom', { userId });
+      if (socket.connected) {
+        if (customerId) {
+          // console.log('👤 Registering user with socket room:', customerId);
+          socket.emit('registerUser', { userId: customerId });
+          socket.emit('joinRoom', { userId: customerId });
+        }
+        
+        if (userId && userId !== customerId) {
+          // console.log('👤 Joining userId room:', userId);
+          socket.emit('joinRoom', { userId: userId });
+        }
       }
     } catch (error) {
       console.error('Error registering user room:', error);
@@ -2701,83 +2894,6 @@ const acceptedDriverData: DriverType = {
     setShowRouteDetailsModal(true);
   };
 
-  // 1. First, update the user data fetching function to ensure it runs properly
-  useEffect(() => {
-    if (!isMountedRef.current) return;
-    
-    const fetchAndStoreUserData = async () => {
-      try {
-        console.log('🔄 Fetching user data from backend...');
-        const token = await AsyncStorage.getItem('authToken');
-        if (!token) {
-          console.log('⚠️ No auth token found');
-          return;
-        }
-        
-        const backendUrl = getBackendUrl();
-        const response = await axios.get(`${backendUrl}/api/users/profile`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
-        console.log('📋 User Profile Response:', response.data);
-        
-        if (response.data?.success && response.data?.user) {
-          const userData = response.data.user;
-          
-          console.log('👤 User Data:', {
-            userId: userData._id,
-            customerId: userData.customerId,
-            name: userData.name,
-            phoneNumber: userData.phoneNumber
-          });
-          
-          // Store user data in multiple formats for compatibility
-          await AsyncStorage.setItem('userData', JSON.stringify(userData));
-          
-          if (userData._id) {
-            await AsyncStorage.setItem('userId', userData._id);
-          }
-          
-          if (userData.customerId) {
-            await AsyncStorage.setItem('customerId', userData.customerId);
-            console.log('✅ Customer ID stored:', userData.customerId);
-          } else if (userData._id) {
-            // Fallback: use _id as customerId
-            await AsyncStorage.setItem('customerId', userData._id);
-            console.log('⚠️ No customerId, using _id as fallback:', userData._id);
-          }
-          
-          if (userData.name) {
-            await AsyncStorage.setItem('userName', userData.name);
-          }
-          
-          if (userData.phoneNumber) {
-            await AsyncStorage.setItem('userMobile', userData.phoneNumber);
-          }
-          
-          console.log('✅ User data stored successfully');
-        } else {
-          console.error('❌ Invalid user profile response');
-        }
-      } catch (error) {
-        console.error('❌ Error fetching user data:', error.message);
-      }
-    };
-    
-    // Fetch user data when component mounts
-    fetchAndStoreUserData();
-    
-    // Also fetch when socket connects
-    const handleSocketConnect = () => {
-      fetchAndStoreUserData();
-    };
-    
-    socket.on('connect', handleSocketConnect);
-    
-    return () => {
-      socket.off('connect', handleSocketConnect);
-    };
-  }, []);
 
   // 2. Add a helper function to get user data with fallbacks
   const getUserData = async () => {
@@ -2833,6 +2949,20 @@ const acceptedDriverData: DriverType = {
       if (!customerId) {
         Alert.alert("Booking Error", "User ID not found. Please login again.");
         return;
+      }
+
+      // FORCE SOCKET REGISTRATION BEFORE BOOKING
+      if (socket.connected) {
+         if (customerId) {
+            console.log('🔌 Ensuring socket registration before booking (customerId):', customerId);
+            socket.emit('registerUser', { userId: customerId });
+            socket.emit('joinRoom', { userId: customerId });
+         }
+         
+         if (userInfo.userId && userInfo.userId !== customerId) {
+            console.log('🔌 Ensuring socket registration before booking (userId):', userInfo.userId);
+            socket.emit('joinRoom', { userId: userInfo.userId });
+         }
       }
       
       // ✅ Validate locations
@@ -3378,64 +3508,74 @@ const acceptedDriverData: DriverType = {
     }
   }, [billingData, refreshWallet]);
 
-  // Helper function to reset app state
-  const resetAppState = useCallback(async () => {
-    console.log('🧹 Resetting app to default state...');
 
-    // Close the modal
-    setShowBillModal(false);
-    setBillingData(null);
-
-    // Reset all ride-related state variables
-    setRideStatus("idle");
-    setCurrentRideId(null);
-    setDriverId(null);
-    setDriverLocation(null);
-    setDisplayedDriverLocation(null);
-    setAcceptedDriver(null);
-    setPickupLocation(null);
-    setBookedPickupLocation(null);
-    setDropoffLocation(null);
-    setRouteCoords([]);
-    setDistance('');
-    setTravelTime('');
-    setEstimatedPrice(null);
-    setBookingOTP('');
-    setNearbyDrivers([]);
-    setNearbyDriversCount(0);
-    setShowOTPInput(false);
-    setShowLocationOverlay(true);
-    setDriverArrivedAlertShown(false);
-    setRideCompletedAlertShown(false);
-    setHasClosedSearching(false);
-    setTravelledKm(0);
-    setLastCoord(null);
-    setRealTimeNavigationActive(false);
-    setShowRouteDetailsModal(false);
-    setHidePickupAndUserLocation(false);
-    setIsBooking(false);
-    setLastPolylineUpdateLocation(null);
-    setSmoothRouteCoords([]);
-    setOtpVerifiedAlertShown(false);
-
-    // Reset input fields
-    propHandlePickupChange('');
-    propHandleDropoffChange('');
-
-    // Force the map to completely remount, clearing all old markers and polylines
-    setMapKey(prevKey => prevKey + 1);
-
-    // Clear all ride data from storage
-    await clearRideStorage();
-
-    // Explicitly fetch nearby drivers for the fresh, default view
-    if (location) {
-      console.log('🔄 Fetching nearby drivers for default view.');
-      setTimeout(() => fetchNearbyDrivers(location.latitude, location.longitude), 500);
+  // Enhanced reset function
+const resetAppState = useCallback(async () => {
+  console.log('🧹 Resetting app to default state...');
+  
+  // Close all modals and overlays
+  setShowBillModal(false);
+  setShowRouteDetailsModal(false);
+  setShowSearchingPopup(false);
+  setShowOTPInput(false);
+  
+  // Reset all ride-related state variables
+  setRideStatus("idle");
+  setCurrentRideId(null);
+  setDriverId(null);
+  setDriverLocation(null);
+  setDisplayedDriverLocation(null);
+  setAcceptedDriver(null);
+  setPickupLocation(null);
+  setBookedPickupLocation(null);
+  setDropoffLocation(null);
+  setRouteCoords([]);
+  setDistance('');
+  setTravelTime('');
+  setEstimatedPrice(null);
+  setBookingOTP('');
+  setNearbyDrivers([]);
+  setNearbyDriversCount(0);
+  setDriverArrivedAlertShown(false);
+  setRideCompletedAlertShown(false);
+  setHasClosedSearching(false);
+  setTravelledKm(0);
+  setLastCoord(null);
+  setRealTimeNavigationActive(false);
+  setShowLocationOverlay(true);
+  setHidePickupAndUserLocation(false);
+  setIsBooking(false);
+  setOtpVerifiedAlertShown(false);
+  
+  // Reset input fields
+  propHandlePickupChange('');
+  propHandleDropoffChange('');
+  
+  // Force map remount
+  setMapKey(prevKey => prevKey + 1);
+  
+  // Clear all ride data from storage
+  await clearRideStorage();
+  
+  // Reinitialize socket connections
+  if (socket.connected) {
+    socket.emit('getCurrentPrices');
+    const userId = await AsyncStorage.getItem('customerId') || await AsyncStorage.getItem('userId');
+    if (userId) {
+      socket.emit('registerUser', { userId });
+      socket.emit('joinRoom', { userId });
     }
+  }
+  
+  // Fetch nearby drivers for fresh view
+  if (location) {
+    console.log('🔄 Fetching nearby drivers for default view.');
+    setTimeout(() => fetchNearbyDrivers(location.latitude, location.longitude), 500);
+  }
+  
+  console.log('✅ App reset to fresh state. Ready for new booking.');
+}, [location, fetchNearbyDrivers, propHandlePickupChange, propHandleDropoffChange]);
 
-    console.log('✅ App reset to fresh state. Ready for new booking.');
-  }, [location, fetchNearbyDrivers, propHandlePickupChange, propHandleDropoffChange]);
 
     // Debug monitoring for animation state
     useEffect(() => {

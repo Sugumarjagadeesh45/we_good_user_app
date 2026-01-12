@@ -2,12 +2,13 @@ import io from 'socket.io-client';
 import { Platform } from 'react-native';
 
 // -----------------------------------------
-//  SOCKET CONFIGURATION (LIVE SERVER)
+//  SOCKET CONFIGURATION (LOCALHOST + NGROK)
 // -----------------------------------------
-// Use live production server for socket connections (driver/user location tracking)
-const SOCKET_URL = 'https://taxi.webase.co.in';
+// Use localhost via ngrok tunnel for socket connections (driver/user location tracking)
+// IMPORTANT: Update this ngrok URL whenever you restart ngrok
+const SOCKET_URL = 'https://0e5bbf94f290.ngrok-free.app';
 
-console.log('🔗 Connecting Socket to Live Server:', SOCKET_URL);
+console.log('🔗 Connecting Socket to LOCALHOST (via ngrok):', SOCKET_URL);
 
 const socket = io(SOCKET_URL, {
   transports: ['websocket'],

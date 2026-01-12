@@ -1,13 +1,14 @@
 import { Platform } from 'react-native';
 
 // -----------------------------------------
-// 🌐 LIVE SERVER CONFIGURATION
+// 🌐 LOCALHOST + NGROK CONFIGURATION
 // -----------------------------------------
 
-// Base URL for API calls - Live production server
-export const API_BASE_URL = 'https://taxi.webase.co.in';
+// Base URL for API calls - Localhost via ngrok tunnel
+// IMPORTANT: Update this ngrok URL whenever you restart ngrok
+export const API_BASE_URL = 'https://0e5bbf94f290.ngrok-free.app';
 
-console.log("🚀 User App API configured for LIVE SERVER:", API_BASE_URL);
+console.log("🚀 User App API configured for LOCALHOST (via ngrok):", API_BASE_URL);
 
 // Add this function to get your server URL for map tiles
 export const getMapTileUrl = () => {

@@ -96,20 +96,22 @@ LanguageProvider
 
 ## Backend Configuration
 
-### Current Setup: Live Production Server
+### Current Setup: Localhost + Ngrok Tunnel
 
-The app is configured to use the **live production server** for all backend connections:
+The app is configured to use **localhost via ngrok tunnel** for all backend connections:
 
 **Configuration Files**:
 - [src/socket.ts](src/socket.ts) - Socket.IO connection
 - [src/util/backendConfig.tsx](src/util/backendConfig.tsx) - API base URL
 
-**Live Server URL**: `https://backend-besafe.onrender.com`
+**Current Ngrok URL**: `https://a373e5b8120c.ngrok-free.app` → `http://localhost:5001`
 
-Both API calls and Socket.IO connections use the same live server URL. This configuration works for:
-- Android emulators and physical devices
-- iOS simulators and physical devices
-- Development and production environments
+**IMPORTANT**: You must update the ngrok URL in both files whenever you restart ngrok, as the URL changes with each session.
+
+This configuration allows you to:
+- Develop and test against your local backend server
+- Test on physical devices and emulators using the ngrok tunnel
+- Debug API calls and socket events in real-time
 
 ### Backend API Endpoints
 
@@ -276,7 +278,9 @@ src/
 - Test thoroughly after any modifications
 
 ### Backend URL Usage
-Always use the `getBackendUrl()` function from [backendConfig.tsx](src/util/backendConfig.tsx) rather than hardcoding URLs. The app is configured to use the live production server `https://backend-besafe.onrender.com` for all API calls and Socket.IO connections.
+Always use the `getBackendUrl()` function from [backendConfig.tsx](src/util/backendConfig.tsx) rather than hardcoding URLs. The app is currently configured to use localhost via ngrok tunnel (`https://a373e5b8120c.ngrok-free.app`) for all API calls and Socket.IO connections.
+
+**Remember**: Update the ngrok URL in both [src/socket.ts](src/socket.ts) and [src/util/backendConfig.tsx](src/util/backendConfig.tsx) whenever you restart ngrok.
 
 ### AsyncStorage Token Keys
 The app historically used both `authToken` and `userToken` keys. Always check both when retrieving tokens:
@@ -308,11 +312,13 @@ cd ..
 ## Testing Workflow
 
 ### Wallet Integration Testing
-1. Ensure live backend server is running at https://backend-besafe.onrender.com
-2. Launch app (check console for "Wallet balance fetched")
-3. Open menu → verify balance displays
-4. Complete a test ride → verify billing alert appears
-5. Check wallet balance updates in menu
+1. Ensure your local backend server is running on `http://localhost:5001`
+2. Ensure ngrok is running and forwarding to localhost:5001
+3. Update the ngrok URL in [src/socket.ts](src/socket.ts) and [src/util/backendConfig.tsx](src/util/backendConfig.tsx) if it changed
+4. Launch app (check console for "Wallet balance fetched")
+5. Open menu → verify balance displays
+6. Complete a test ride → verify billing alert appears
+7. Check wallet balance updates in menu
 
 ### Driver Animation Testing
 1. Book a ride
