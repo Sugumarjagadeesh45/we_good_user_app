@@ -4084,8 +4084,6 @@ const resetAppState = useCallback(async () => {
 );
 
   
-
-
 };
 
 const styles = StyleSheet.create({
