@@ -44,6 +44,7 @@ import SearchingAnimation from '../../constants/SearchingAnimation';
 import BillingAlert from '../../components/BillingAlert';
 import { useWallet } from '../../context/WalletContext';
 import RideTypeSelector from './RideTypeSelector';
+import { GOOGLE_MAP_KEY } from '../../constants/googleMapKey';
 
 // Add this import at the top with your other imports
 import logo from '../../../assets/taxi.png'; 
@@ -541,32 +542,77 @@ const TaxiContent: React.FC<TaxiContentProps> = ({
     const distanceKm = R * c;
     return distanceKm * 1000;
   };
-  
+
+  // ✅ GOOGLE POLYLINE DECODER UTILITY (for Directions API)
+  // Decodes Google's encoded polyline format to latitude/longitude coordinates
+  const decodePolyline = (encoded: string): { latitude: number; longitude: number }[] => {
+    const points: { latitude: number; longitude: number }[] = [];
+    let index = 0;
+    const len = encoded.length;
+    let lat = 0;
+    let lng = 0;
+
+    while (index < len) {
+      let b;
+      let shift = 0;
+      let result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlat = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlng = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+      lng += dlng;
+
+      points.push({
+        latitude: lat / 1e5,
+        longitude: lng / 1e5,
+      });
+    }
+
+    return points;
+  };
+
   // Real-time route calculation function
   const fetchRealTimeRoute = async (driverLocation: LocationType, dropoffLocation: LocationType) => {
     try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${driverLocation.longitude},${driverLocation.latitude};${dropoffLocation.longitude},${dropoffLocation.latitude}?overview=full&geometries=geojson`;
+      // ✅ GOOGLE DIRECTIONS API (Replaces OSRM Real-time Routing)
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${driverLocation.latitude},${driverLocation.longitude}&destination=${dropoffLocation.latitude},${dropoffLocation.longitude}&key=${GOOGLE_MAP_KEY}&mode=driving&alternatives=false&language=en`;
       const res = await fetch(url);
       const data = await res.json();
-      
-      if (data.code === "Ok" && data.routes.length > 0) {
-        const coords = data.routes[0].geometry.coordinates.map(([lng, lat]: number[]) => ({ 
-          latitude: lat, 
-          longitude: lng 
-        }));
-       
-        const currentDistance = (data.routes[0].distance / 1000).toFixed(2);
-        const currentTime = Math.round(data.routes[0].duration / 60);
-        
-        console.log(`✅ Real-time Route Calculated FROM DRIVER POSITION`);
+
+      if (data.status === "OK" && data.routes.length > 0) {
+        const route = data.routes[0];
+        const leg = route.legs[0];
+
+        // Decode polyline from Google Directions API
+        const polylinePoints = route.overview_polyline.points;
+        const coords = decodePolyline(polylinePoints);
+
+        const currentDistance = (leg.distance.value / 1000).toFixed(2);
+        const currentTime = Math.round(leg.duration.value / 60);
+
+        console.log(`✅ Real-time Route Calculated FROM DRIVER POSITION (Google Directions API)`);
         console.log(`📏 REMAINING Distance: ${currentDistance} km`);
         console.log(`📊 Route Points: ${coords.length}`);
-        
+
         return {
           coords,
           distance: currentDistance,
           time: currentTime
         };
+      } else {
+        console.error(`❌ Google Directions API error: ${data.status}`);
       }
     } catch (error) {
       console.error('❌ Real-time route calculation failed:', error);
@@ -2420,27 +2466,38 @@ useEffect(() => {
         socket.off("connect", handleReconnect);
       };
     }, []);
-    
+
     // Fetch route with retry
     const fetchRoute = async (pickupCoord: LocationType, dropCoord: LocationType, retryCount = 0) => {
       if (!isMountedRef.current) return;
-      
+
       try {
-        const url = `https://router.project-osrm.org/route/v1/driving/${pickupCoord.longitude},${pickupCoord.latitude};${dropCoord.longitude},${dropCoord.latitude}?overview=full&geometries=geojson`;
+        // ✅ GOOGLE DIRECTIONS API (Replaces OSRM Route Calculation)
+        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${pickupCoord.latitude},${pickupCoord.longitude}&destination=${dropCoord.latitude},${dropCoord.longitude}&key=${GOOGLE_MAP_KEY}&mode=driving&alternatives=false&language=en`;
         const res = await fetch(url);
         const data = await res.json();
-        
-        if (data.code === "Ok" && data.routes.length > 0 && data.routes[0].geometry.coordinates.length >= 2) {
-          const coords = data.routes[0].geometry.coordinates.map(([lng, lat]: number[]) => ({ latitude: lat, longitude: lng }));
-          setRouteCoords(coords);
-          setDistance((data.routes[0].distance / 1000).toFixed(2) + " km");
-          setTravelTime(Math.round(data.routes[0].duration / 60) + " mins");
-          
-          await AsyncStorage.setItem('rideRouteCoords', JSON.stringify(coords));
-          await AsyncStorage.setItem('rideDistance', (data.routes[0].distance / 1000).toFixed(2) + " km");
-          await AsyncStorage.setItem('rideTravelTime', Math.round(data.routes[0].duration / 60) + " mins");
+
+        if (data.status === "OK" && data.routes.length > 0) {
+          const route = data.routes[0];
+          const leg = route.legs[0];
+
+          // Decode polyline from Google Directions API
+          const polylinePoints = route.overview_polyline.points;
+          const coords = decodePolyline(polylinePoints);
+
+          if (coords.length >= 2) {
+            setRouteCoords(coords);
+            setDistance((leg.distance.value / 1000).toFixed(2) + " km");
+            setTravelTime(Math.round(leg.duration.value / 60) + " mins");
+
+            await AsyncStorage.setItem('rideRouteCoords', JSON.stringify(coords));
+            await AsyncStorage.setItem('rideDistance', (leg.distance.value / 1000).toFixed(2) + " km");
+            await AsyncStorage.setItem('rideTravelTime', Math.round(leg.duration.value / 60) + " mins");
+          } else {
+            throw new Error("Invalid route data - insufficient coordinates");
+          }
         } else {
-          throw new Error("Invalid route data");
+          throw new Error(`Google Directions API error: ${data.status}`);
         }
       } catch (err) {
         console.error(err);
@@ -2534,7 +2591,7 @@ useEffect(() => {
     // Fetch suggestions
     const fetchSuggestions = async (query: string, type: 'pickup' | 'dropoff'): Promise<SuggestionType[]> => {
       if (!isMountedRef.current) return [];
-      
+
       try {
         console.log(`Fetching suggestions for: ${query}`);
         const cache = type === 'pickup' ? pickupCache : dropoffCache;
@@ -2542,31 +2599,77 @@ useEffect(() => {
           console.log(`Returning cached suggestions for: ${query}`);
           return cache[query];
         }
-       
+
         if (type === 'pickup') setPickupLoading(true);
         else setDropoffLoading(true);
-       
+
         setSuggestionsError(null);
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&countrycodes=IN`;
+
+        // ✅ GOOGLE PLACES AUTOCOMPLETE API (Replaces Nominatim)
+        const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&key=${GOOGLE_MAP_KEY}&components=country:in&language=en`;
         console.log(`API URL: ${url}`);
-        const response = await fetch(url, {
-          headers: { 'User-Agent': 'EAZYGOApp/1.0' },
-        });
-       
+        const response = await fetch(url);
+
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
-        if (!Array.isArray(data)) throw new Error('Invalid response format');
-       
-        const suggestions: SuggestionType[] = data.map((item: any) => ({
-          id: item.place_id || `${item.lat}-${item.lon}`,
-          name: item.display_name,
-          address: extractAddress(item),
-          lat: item.lat,
-          lon: item.lon,
-          type: item.type || 'unknown',
-          importance: item.importance || 0,
-        }));
-        
+
+        if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+          throw new Error(`Google API error: ${data.status}`);
+        }
+
+        if (!data.predictions || !Array.isArray(data.predictions)) {
+          throw new Error('Invalid response format');
+        }
+
+        // Fetch place details for each prediction to get coordinates and place types
+        const suggestions: SuggestionType[] = await Promise.all(
+          data.predictions.slice(0, 5).map(async (item: any) => {
+            try {
+              // Get place details for coordinates and place type
+              const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${item.place_id}&fields=geometry,types,formatted_address&key=${GOOGLE_MAP_KEY}`;
+              const detailsResponse = await fetch(detailsUrl);
+              const detailsData = await detailsResponse.json();
+
+              if (detailsData.status === 'OK' && detailsData.result) {
+                const result = detailsData.result;
+                const placeTypes = result.types || [];
+
+                return {
+                  id: item.place_id,
+                  name: item.description,
+                  address: item.structured_formatting?.secondary_text || result.formatted_address || item.description,
+                  lat: result.geometry.location.lat.toString(),
+                  lon: result.geometry.location.lng.toString(),
+                  type: placeTypes[0] || 'unknown',
+                  importance: 0.5,
+                };
+              }
+
+              // Fallback if details fetch fails
+              return {
+                id: item.place_id,
+                name: item.description,
+                address: item.structured_formatting?.secondary_text || item.description,
+                lat: '0',
+                lon: '0',
+                type: 'unknown',
+                importance: 0.5,
+              };
+            } catch (err) {
+              console.error('Error fetching place details:', err);
+              return {
+                id: item.place_id,
+                name: item.description,
+                address: item.structured_formatting?.secondary_text || item.description,
+                lat: '0',
+                lon: '0',
+                type: 'unknown',
+                importance: 0.5,
+              };
+            }
+          })
+        );
+
         if (location) {
           const currentLocationSuggestion: SuggestionType = {
             id: 'current-location',
@@ -2579,10 +2682,10 @@ useEffect(() => {
           };
           suggestions.unshift(currentLocationSuggestion);
         }
-       
+
         if (type === 'pickup') setPickupCache(prev => ({ ...prev, [query]: suggestions }));
         else setDropoffCache(prev => ({ ...prev, [query]: suggestions }));
-       
+
         return suggestions;
       } catch (error: any) {
         console.error('Suggestions fetch error:', error);
@@ -3187,36 +3290,73 @@ useEffect(() => {
     const renderSuggestionItem = (item: SuggestionType, onSelect: () => void, key: string) => {
       let iconName = 'location-on';
       let iconColor = '#A9A9A9';
-      
+
+      // ✅ UPDATED ICON MAPPING FOR GOOGLE PLACES API TYPES
       if (item.type === 'current') {
         iconName = 'my-location';
         iconColor = '#4CAF50';
-      } else if (item.type.includes('railway') || item.type.includes('station')) { 
-        iconName = 'train'; 
-        iconColor = '#3F51B5'; 
-      } else if (item.type.includes('airport')) { 
-        iconName = 'flight'; 
-        iconColor = '#2196F3'; 
-      } else if (item.type.includes('bus')) { 
-        iconName = 'directions-bus'; 
-        iconColor = '#FF9800'; 
-      } else if (item.type.includes('hospital')) { 
-        iconName = 'local-hospital'; 
-        iconColor = '#F44336'; 
-      } else if (item.type.includes('school') || item.type.includes('college')) { 
-        iconName = 'school'; 
-        iconColor = '#4CAF50'; 
-      } else if (item.type.includes('place_of_worship')) { 
-        iconName = 'church'; 
-        iconColor = '#9C27B0'; 
-      } else if (item.type.includes('shop') || item.type.includes('mall')) { 
-        iconName = 'shopping-mall'; 
-        iconColor = '#E91E63'; 
-      } else if (item.type.includes('park')) { 
-        iconName = 'park'; 
-        iconColor = '#4CAF50'; 
+      } else if (item.type.includes('airport')) {
+        iconName = 'flight';
+        iconColor = '#2196F3';
+      } else if (item.type.includes('train_station') || item.type.includes('transit_station') || item.type.includes('railway')) {
+        iconName = 'train';
+        iconColor = '#3F51B5';
+      } else if (item.type.includes('bus_station') || item.type.includes('bus')) {
+        iconName = 'directions-bus';
+        iconColor = '#FF9800';
+      } else if (item.type.includes('hospital') || item.type.includes('health') || item.type.includes('doctor')) {
+        iconName = 'local-hospital';
+        iconColor = '#F44336';
+      } else if (item.type.includes('school') || item.type.includes('university') || item.type.includes('college') || item.type.includes('education')) {
+        iconName = 'school';
+        iconColor = '#4CAF50';
+      } else if (item.type.includes('place_of_worship') || item.type.includes('church') || item.type.includes('temple') || item.type.includes('mosque') || item.type.includes('hindu_temple')) {
+        iconName = 'church';
+        iconColor = '#9C27B0';
+      } else if (item.type.includes('shopping_mall') || item.type.includes('store') || item.type.includes('shop')) {
+        iconName = 'shopping-mall';
+        iconColor = '#E91E63';
+      } else if (item.type.includes('park') || item.type.includes('garden')) {
+        iconName = 'park';
+        iconColor = '#4CAF50';
+      } else if (item.type.includes('restaurant') || item.type.includes('food') || item.type.includes('cafe')) {
+        iconName = 'restaurant';
+        iconColor = '#FF5722';
+      } else if (item.type.includes('bar') || item.type.includes('night_club') || item.type.includes('liquor_store')) {
+        iconName = 'local-bar';
+        iconColor = '#9C27B0';
+      } else if (item.type.includes('gas_station') || item.type.includes('fuel')) {
+        iconName = 'local-gas-station';
+        iconColor = '#FF9800';
+      } else if (item.type.includes('parking')) {
+        iconName = 'local-parking';
+        iconColor = '#607D8B';
+      } else if (item.type.includes('bank') || item.type.includes('atm') || item.type.includes('finance')) {
+        iconName = 'account-balance';
+        iconColor = '#2196F3';
+      } else if (item.type.includes('hotel') || item.type.includes('lodging')) {
+        iconName = 'hotel';
+        iconColor = '#00BCD4';
+      } else if (item.type.includes('movie_theater') || item.type.includes('cinema')) {
+        iconName = 'local-movies';
+        iconColor = '#E91E63';
+      } else if (item.type.includes('gym') || item.type.includes('stadium') || item.type.includes('sports')) {
+        iconName = 'fitness-center';
+        iconColor = '#FF5722';
+      } else if (item.type.includes('police')) {
+        iconName = 'local-police';
+        iconColor = '#1976D2';
+      } else if (item.type.includes('post_office') || item.type.includes('postal')) {
+        iconName = 'local-post-office';
+        iconColor = '#FF9800';
+      } else if (item.type.includes('library')) {
+        iconName = 'local-library';
+        iconColor = '#8BC34A';
+      } else if (item.type.includes('pharmacy') || item.type.includes('drugstore')) {
+        iconName = 'local-pharmacy';
+        iconColor = '#4CAF50';
       }
-     
+
       return (
         <TouchableOpacity key={key} style={styles.suggestionItem} onPress={onSelect}>
           <MaterialIcons name={iconName as any} size={20} color={iconColor} style={styles.suggestionIcon} />
@@ -3240,13 +3380,16 @@ useEffect(() => {
     // Reverse geocode
     const reverseGeocode = async (lat: number, lon: number): Promise<string | null> => {
       try {
-        const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1&countrycodes=IN`;
-        const response = await fetch(url, {
-          headers: { 'User-Agent': 'EAZYGOApp/1.0' },
-        });
+        // ✅ GOOGLE GEOCODING API (Replaces Nominatim Reverse Geocoding)
+        const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${GOOGLE_MAP_KEY}&language=en`;
+        const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
-        return data.display_name || null;
+
+        if (data.status === 'OK' && data.results && data.results.length > 0) {
+          return data.results[0].formatted_address || null;
+        }
+        return null;
       } catch (error) {
         console.error('Reverse geocode error:', error);
         return null;

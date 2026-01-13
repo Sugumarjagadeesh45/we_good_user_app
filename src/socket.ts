@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 // -----------------------------------------
 // Use localhost via ngrok tunnel for socket connections (driver/user location tracking)
 // IMPORTANT: Update this ngrok URL whenever you restart ngrok
-const SOCKET_URL = 'https://0e5bbf94f290.ngrok-free.app';
+const SOCKET_URL = 'https://a6edc4973eae.ngrok-free.app';
 
 console.log('🔗 Connecting Socket to LOCALHOST (via ngrok):', SOCKET_URL);
 

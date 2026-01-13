@@ -94,17 +94,84 @@ LanguageProvider
 - Persistent storage in AsyncStorage
 - Automatic wallet credit after ride completion
 
+## Google Maps API Configuration
+
+### API Key Location
+
+The Google Maps API key is stored in [src/constants/googleMapKey.js](src/constants/googleMapKey.js):
+```javascript
+export const GOOGLE_MAP_KEY = "AIzaSyA9Ef953b2mO_rr940k-3OclHSZp3ldM2o"
+```
+
+### Services Using Google Maps API
+
+The app uses **ONLY Google Maps API** for all mapping services:
+
+1. **Places Autocomplete API** - Location search with place types and icons
+2. **Geocoding API** - Reverse geocoding (coordinates to address)
+3. **Directions API** - Route calculation and real-time navigation
+4. **Maps SDK** - Map rendering and display
+
+### Migration from Open-Source Services
+
+**REMOVED Services** (No longer used):
+- ❌ OpenStreetMap Nominatim API (location search & reverse geocoding)
+- ❌ OSRM (Open Source Routing Machine) for route calculation
+
+**Current Implementation** (Google Maps API):
+- ✅ Google Places Autocomplete for location search ([TaxiContent.tsx](src/Screen1/Taxibooking/TaxiContent.tsx:2535))
+- ✅ Google Geocoding API for reverse geocoding ([TaxiContent.tsx](src/Screen1/Taxibooking/TaxiContent.tsx:3288))
+- ✅ Google Directions API for route calculation ([TaxiContent.tsx](src/Screen1/Taxibooking/TaxiContent.tsx:2466))
+- ✅ Google Directions API for real-time routing ([TaxiContent.tsx](src/Screen1/Taxibooking/TaxiContent.tsx:547))
+
+### Place Type Icons
+
+Location search suggestions display contextual icons based on Google Places API types:
+- ✈️ Airport → `flight` icon
+- 🚂 Train/Railway Station → `train` icon
+- 🚌 Bus Station → `directions-bus` icon
+- 🏥 Hospital/Health → `local-hospital` icon
+- 🏫 School/University → `school` icon
+- ⛪ Place of Worship → `church` icon
+- 🛒 Shopping Mall/Store → `shopping-mall` icon
+- 🌳 Park/Garden → `park` icon
+- 🍽️ Restaurant/Cafe → `restaurant` icon
+- 🍺 Bar/Night Club → `local-bar` icon
+- ⛽ Gas Station → `local-gas-station` icon
+- 🏨 Hotel/Lodging → `hotel` icon
+- 🏦 Bank/ATM → `account-balance` icon
+- And 15+ more types ([TaxiContent.tsx](src/Screen1/Taxibooking/TaxiContent.tsx:3290-3358))
+
+### Polyline Decoding
+
+Google Directions API returns routes in encoded polyline format. The app includes a decoder utility:
+- Location: [TaxiContent.tsx](src/Screen1/Taxibooking/TaxiContent.tsx:546-584)
+- Converts encoded strings to latitude/longitude coordinates
+- Used by both initial route calculation and real-time routing
+
+### iOS Configuration
+
+Google Maps SDK is initialized in [AppDelegate.swift](ios/Eazygo/AppDelegate.swift:19):
+```swift
+import GoogleMaps
+GMSServices.provideAPIKey("AIzaSyA9Ef953b2mO_rr940k-3OclHSZp3ldM2o")
+```
+
+### Android Configuration
+
+Google Maps API key is configured in [AndroidManifest.xml](android/app/src/main/AndroidManifest.xml:26-28).
+
 ## Backend Configuration
 
 ### Current Setup: Localhost + Ngrok Tunnel
 
-The app is configured to use **localhost via ngrok tunnel** for all backend connections:
+The app is configured to use **localhost via ngrok tunnel** for backend connections (not map services):
 
 **Configuration Files**:
 - [src/socket.ts](src/socket.ts) - Socket.IO connection
 - [src/util/backendConfig.tsx](src/util/backendConfig.tsx) - API base URL
 
-**Current Ngrok URL**: `https://a373e5b8120c.ngrok-free.app` → `http://localhost:5001`
+**Current Ngrok URL**: `https://49be702bef38.ngrok-free.app` → `http://localhost:5001`
 
 **IMPORTANT**: You must update the ngrok URL in both files whenever you restart ngrok, as the URL changes with each session.
 
@@ -278,7 +345,7 @@ src/
 - Test thoroughly after any modifications
 
 ### Backend URL Usage
-Always use the `getBackendUrl()` function from [backendConfig.tsx](src/util/backendConfig.tsx) rather than hardcoding URLs. The app is currently configured to use localhost via ngrok tunnel (`https://a373e5b8120c.ngrok-free.app`) for all API calls and Socket.IO connections.
+Always use the `getBackendUrl()` function from [backendConfig.tsx](src/util/backendConfig.tsx) rather than hardcoding URLs. The app is currently configured to use localhost via ngrok tunnel (`https://49be702bef38.ngrok-free.app`) for all API calls and Socket.IO connections.
 
 **Remember**: Update the ngrok URL in both [src/socket.ts](src/socket.ts) and [src/util/backendConfig.tsx](src/util/backendConfig.tsx) whenever you restart ngrok.
 

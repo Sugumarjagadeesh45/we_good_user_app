@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 
 // Base URL for API calls - Localhost via ngrok tunnel
 // IMPORTANT: Update this ngrok URL whenever you restart ngrok
-export const API_BASE_URL = 'https://0e5bbf94f290.ngrok-free.app';
+export const API_BASE_URL = 'https://a6edc4973eae.ngrok-free.app';
 
 console.log("🚀 User App API configured for LOCALHOST (via ngrok):", API_BASE_URL);
 
