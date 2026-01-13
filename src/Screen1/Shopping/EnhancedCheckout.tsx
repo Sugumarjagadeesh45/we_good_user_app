@@ -14,8 +14,7 @@ import { useCart } from './ShoppingContent';
 import { useAddress } from './AddressContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-
-const BASE_URL = 'https://taxi.webase.co.in';
+import { getBackendUrl } from '../../util/backendConfig';
 
 const EnhancedCheckout = () => {
   const navigation = useNavigation();
@@ -66,10 +65,14 @@ const EnhancedCheckout = () => {
         throw new Error('User data not found');
       }
 
+      const customerId = userData.customerId || await AsyncStorage.getItem('customerId');
+
       const orderData = {
         userId: userData._id || userData.id,
+        customerId: customerId || userData._id || userData.id,
         products: cartItems.map(item => ({
-          _id: item._id,
+          productId: item._id || item.id,
+          _id: item._id || item.id,
           name: item.name,
           price: item.price,
           quantity: item.quantity,
@@ -78,12 +81,14 @@ const EnhancedCheckout = () => {
         })),
         deliveryAddress: defaultAddress,
         paymentMethod: selectedPayment,
+        totalAmount: Number(calculateTotal().toFixed(2)),
+        orderDate: new Date().toISOString(),
         useWallet: false
       };
 
       console.log('📦 Placing order with data:', orderData);
 
-      const response = await axios.post(`${BASE_URL}/api/orders/create`, orderData, {
+      const response = await axios.post(`${getBackendUrl()}/api/orders/create`, orderData, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -93,9 +98,14 @@ const EnhancedCheckout = () => {
       if (response.data.success) {
         await clearCart();
         
+        const orderId = response.data.orderId || 
+                        (response.data.order && response.data.order.orderId) || 
+                        (response.data.data && response.data.data.orderId) || 
+                        'Unknown';
+
         Alert.alert(
           'Order Confirmed!',
-          `Your order #${response.data.data.orderId} has been placed successfully!\nTotal: ₹${getCartTotal().toFixed(2)}`,
+          `Your order #${orderId} has been placed successfully!\nTotal: ₹${getCartTotal().toFixed(2)}`,
           [
             {
               text: 'View Orders',

@@ -2,8 +2,9 @@ import React, { createContext, useState, useContext, useEffect, ReactNode } from
 import { Alert } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getBackendUrl } from '../../util/backendConfig';
 
-const BASE_URL = 'https://taxi.webase.co.in';
+const BASE_URL = getBackendUrl();
 
 interface Address {
   id: string;
@@ -173,7 +174,7 @@ export const AddressProvider: React.FC<{ children: ReactNode }> = ({ children })
   const setDefaultAddress = async (id: string) => {
     try {
       const token = await AsyncStorage.getItem('userToken') || await AsyncStorage.getItem('authToken');
-      
+
       if (token) {
         await axios.patch(
           `${BASE_URL}/api/users/addresses/${id}/set-default`,
@@ -181,24 +182,37 @@ export const AddressProvider: React.FC<{ children: ReactNode }> = ({ children })
           { headers: { Authorization: `Bearer ${token}` } }
         );
       }
-      
+
       const updatedAddresses = addresses.map(addr => ({
         ...addr,
         isDefault: addr.id === id,
       }));
-      
+
       setAddresses(updatedAddresses);
-      
+
       // Update stored shipping address
       const newDefault = updatedAddresses.find(addr => addr.id === id);
       if (newDefault) {
         await AsyncStorage.setItem('shippingAddress', JSON.stringify(newDefault));
       }
-      
+
       Alert.alert('Success', 'Default address updated successfully');
     } catch (error) {
       console.error('Error setting default address:', error);
       Alert.alert('Error', 'Failed to set default address');
+    }
+  };
+
+  // ✅ FIX: Add missing fetchAddresses function
+  const fetchAddresses = async () => {
+    try {
+      setLoading(true);
+      // For now, just fetch from user profile - no backend API needed
+      await fetchUserProfileForAddress();
+    } catch (error) {
+      console.error('Error fetching addresses:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -210,7 +224,7 @@ export const AddressProvider: React.FC<{ children: ReactNode }> = ({ children })
       updateAddress,
       deleteAddress,
       setDefaultAddress,
-     
+      fetchAddresses,
       fetchUserProfileForAddress,
       loading,
     }}>

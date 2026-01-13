@@ -5,8 +5,9 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation } from '@react-navigation/native';
 import { CartContext } from '../ShoppingContent';
 import { useAddress } from '../AddressContext';
-import { getImageUrl } from '../../../../src/util/backendConfig';
+import { getImageUrl, getBackendUrl } from '../../../../src/util/backendConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 const Cart = () => {
   const navigation = useNavigation();
@@ -59,24 +60,60 @@ const Cart = () => {
     
     setLoading(true);
     try {
-      // Simulate checkout process
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      Alert.alert(
-        'Order Confirmed',
-        `Your order has been placed successfully!\nPayment Method: ${getPaymentMethodText(selectedPayment)}`,
-        [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              clearCart();
-              navigation.navigate('MyOrders');
-            }
-          }
-        ]
-      );
-    } catch (error) {
-      Alert.alert('Error', 'Failed to process order');
+      const token = await AsyncStorage.getItem('authToken');
+      const customerId = await AsyncStorage.getItem('customerId');
+      const userId = await AsyncStorage.getItem('userId');
+
+      if (!token) {
+        Alert.alert('Authentication Error', 'Please login to place an order');
+        setLoading(false);
+        return;
+      }
+
+      const currentAddress = getDisplayAddress();
+
+      const orderPayload = {
+        customerId: customerId || userId,
+        userId: userId,
+        products: cartItems.map(item => ({
+          _id: item._id || item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          images: item.images,
+          category: item.category,
+          description: item.description
+        })),
+        deliveryAddress: currentAddress,
+        paymentMethod: selectedPayment,
+        totalAmount: Number(calculateTotal().toFixed(2)),
+        useWallet: false,
+        orderDate: new Date().toISOString()
+      };
+
+      console.log('📦 Cart Checkout Payload:', orderPayload);
+
+      const backendUrl = getBackendUrl();
+      const response = await axios.post(`${backendUrl}/api/orders/create`, orderPayload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.data.success) {
+        const orderId = response.data.orderId || 
+                        (response.data.order && response.data.order.orderId) || 
+                        (response.data.data && response.data.data.orderId) || 
+                        'Unknown';
+
+        Alert.alert('Order Confirmed', `Your order has been placed successfully!\nOrder ID: ${orderId}`, [
+          { text: 'OK', onPress: () => { clearCart(); navigation.navigate('MyOrders'); } }
+        ]);
+      } else {
+        throw new Error(response.data.error || 'Failed to place order');
+      }
+    } catch (error: any) {
+      console.error('Checkout error:', error);
+      console.log('Error details:', error.response?.data);
+      Alert.alert('Error', error.response?.data?.error || 'Failed to process order');
     } finally {
       setLoading(false);
     }

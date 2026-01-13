@@ -6,6 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is **Eazygo** (internally named "user-app_Besafe"), a React Native mobile application for ride-hailing and shopping services. The app supports both taxi booking with real-time driver tracking and an e-commerce shopping experience.
 
+**Technology Stack**:
+- React Native 0.80.2
+- TypeScript 5.0.4
+- React Navigation 7.x
+- Socket.IO Client 4.5.4
+- Firebase Auth
+- Google Maps API
+- Node.js >=18 (required)
+
 ## Development Commands
 
 ### Running the App
@@ -83,10 +92,12 @@ LanguageProvider
 
 #### Shopping
 - Product catalog with categories
-- Shopping cart functionality
-- Address management
-- Enhanced checkout flow
-- Order history
+- Shopping cart functionality (managed via CartContext)
+- Address management with default address selection
+- Enhanced checkout flow with payment options
+- Order history and tracking
+- Buy Now feature for direct purchases
+- Cart icon with real-time item count badge
 
 #### Wallet System
 - Global wallet state managed by [WalletContext.tsx](src/context/WalletContext.tsx)
@@ -243,12 +254,27 @@ autoConnect: true
 
 **CartProvider** (in [ShoppingContent.tsx](src/Screen1/Shopping/ShoppingContent.tsx)):
 - Shopping cart state management
-- Add/remove items
-- Calculate totals
+- Add/remove items with quantity control
+- Calculate totals (subtotal, delivery, taxes)
+- Cart badge count display
+- Persistent cart state
 
 **AddressProvider** ([AddressContext.tsx](src/Screen1/Shopping/AddressContext.tsx)):
 - User delivery addresses
 - Address CRUD operations
+- Default address management
+
+### Shopping Module Components
+
+The shopping feature is organized into several key components in [src/Screen1/Shopping/](src/Screen1/Shopping/):
+
+- **ShoppingContent.tsx** - Main shopping interface with product listings and CartProvider
+- **BuyNow.tsx** - Cart review and direct purchase flow with address selection
+- **EnhancedCheckout.tsx** - Complete checkout experience with order summary
+- **EnhancedCart.tsx** - Detailed cart management with quantity updates
+- **AddressManagement.tsx** - Address CRUD interface
+- **EnhancedMyOrders.tsx** - Order history and tracking
+- **icons/Cart.tsx** - Animated cart icon with badge counter
 
 ### Authentication & Storage
 
@@ -309,6 +335,14 @@ import Logo from './assets/logo.svg';
 
 Configuration is in [metro.config.js](metro.config.js).
 
+### TypeScript Configuration
+
+Custom type definitions are located in [src/types/](src/types/). The [tsconfig.json](tsconfig.json) includes custom type roots configuration:
+- `./src/types` - Custom application types
+- `./node_modules/@types` - Standard npm types
+
+When adding new global types or type definitions, place them in the `src/types/` directory.
+
 ## File Organization
 
 ```
@@ -363,7 +397,7 @@ Firebase Auth and Geolocation require proper iOS permissions. Check Info.plist f
 - Location permissions (NSLocationWhenInUseUsageDescription)
 - Camera/Photo Library (for profile pictures)
 
-Before running on iOS, ensure CocoaPods dependencies are installed:
+The iOS [Podfile](ios/Podfile) uses React Native's auto-linking via `use_native_modules!`. Before running on iOS, ensure CocoaPods dependencies are installed:
 ```bash
 cd ios && bundle exec pod install && cd ..
 ```
@@ -375,6 +409,8 @@ rm -rf Pods Podfile.lock
 bundle exec pod install
 cd ..
 ```
+
+**Note**: The Podfile requires Node.js to resolve React Native's pod configuration dynamically.
 
 ## Testing Workflow
 

@@ -18,17 +18,20 @@ import { useAddress } from './AddressContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { getImageUrl, getBackendUrl } from '../../util/backendConfig';
+import { useWallet } from '../../context/WalletContext';
 
 const BuyNow = () => {
   const navigation = useNavigation();
   const { cartItems, removeFromCart, clearCart, updateQuantity } = useContext(CartContext);
   const { defaultAddress, addresses, fetchAddresses, loading: addressLoading } = useAddress();
+  const { walletBalance, fetchWalletBalance, loading: walletLoading } = useWallet();
   const [loading, setLoading] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState('card');
+  const [useWalletAmount, setUseWalletAmount] = useState(false); // New state for wallet usage
   const [userData, setUserData] = useState(null);
 
   useEffect(() => {
     loadUserData();
+    fetchWalletBalance(); // Fetch wallet balance on mount
   }, []);
 
   const loadUserData = async () => {
@@ -121,17 +124,19 @@ const handleCheckout = async () => {
 
     // Extract identifiers
     const customerId = userProfileData.customerId;
+    const userId = userProfileData._id || userProfileData.id;
     const phoneNumber = userProfileData.phoneNumber;
 
     if (!customerId) {
       throw new Error('Customer ID not found in user profile');
     }
 
-    console.log(`🔑 Using identifiers - CustomerId: ${customerId}`);
+    console.log(`🔑 Using identifiers - CustomerId: ${customerId}, UserId: ${userId}`);
 
     // Prepare products data
     const products = cartItems.map(item => ({
-      _id: item._id || `product_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      productId: item._id || item.id || `product_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      _id: item._id || item.id || `product_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       name: item.name || 'Unknown Product',
       price: parseFloat(item.price) || 0,
       quantity: parseInt(item.quantity) || 1,
@@ -142,6 +147,7 @@ const handleCheckout = async () => {
     // Prepare order data
     const orderData = {
       customerId: customerId, // Primary identifier
+      userId: userId,
       products: products,
       deliveryAddress: defaultAddress || {
         name: userProfileData.name || 'Customer',
@@ -152,8 +158,12 @@ const handleCheckout = async () => {
         pincode: '000000',
         country: 'India'
       },
-      paymentMethod: selectedPayment,
-      useWallet: false
+      paymentMethod: 'cash', // Always cash on delivery
+      totalAmount: Number(calculateTotal().toFixed(2)),
+      orderDate: new Date().toISOString(),
+      useWallet: useWalletAmount,
+      walletDeduction: useWalletAmount ? getWalletDeduction() : 0,
+      originalTotal: calculateSubtotal() + calculateShipping() + calculateTax()
     };
 
     console.log('📦 Placing order with data:', orderData);
@@ -187,15 +197,37 @@ const handleCheckout = async () => {
 
     if (orderResponse.data.success) {
       clearCart();
-      
+
+      // Handle different response structures safely
+      const orderId = orderResponse.data.orderId || 
+                      (orderResponse.data.order && orderResponse.data.order.orderId) || 
+                      (orderResponse.data.data && orderResponse.data.data.orderId) || 
+                      'Unknown';
+
+      // Prepare success message
+      let message = `Your order #${orderId} has been placed successfully!\n\n`;
+
+      if (useWalletAmount && getWalletDeduction() > 0) {
+        message += `✅ Wallet Deducted: ₹${getWalletDeduction().toFixed(2)}\n`;
+        const remainingAmount = calculateTotal();
+        if (remainingAmount > 0) {
+          message += `💵 Cash on Delivery: ₹${remainingAmount.toFixed(2)}`;
+        } else {
+          message += `🎉 Fully paid from wallet! No cash required.`;
+        }
+      } else {
+        message += `💵 Total (Cash on Delivery): ₹${calculateTotal().toFixed(2)}`;
+      }
+
       Alert.alert(
         'Order Confirmed! 🎉',
-        `Your order #${orderResponse.data.data.orderId} has been placed successfully!\nTotal: ₹${calculateTotal().toFixed(2)}`,
+        message,
         [
           {
             text: 'View Orders',
             onPress: () => {
               AsyncStorage.removeItem('ordersCache');
+              fetchWalletBalance(); // Refresh wallet balance
               navigation.navigate('EnhancedMyOrders');
             }
           },
@@ -203,6 +235,7 @@ const handleCheckout = async () => {
             text: 'Continue Shopping',
             style: 'cancel',
             onPress: () => {
+              fetchWalletBalance(); // Refresh wallet balance
               navigation.reset({
                 index: 0,
                 routes: [{ name: 'Screen1' }],
@@ -216,11 +249,18 @@ const handleCheckout = async () => {
     }
   } catch (error: any) {
     console.error('❌ Error placing order:', error);
-    
+    console.error('❌ Error response data:', error.response?.data);
+    console.error('❌ Error response status:', error.response?.status);
+    console.error('❌ Full error object:', JSON.stringify(error.response?.data, null, 2));
+
     let errorMessage = 'Failed to place order. Please try again.';
-    
+
     if (error.response?.data?.error) {
       errorMessage = error.response.data.error;
+      console.error('❌ Backend error message:', errorMessage);
+    } else if (error.response?.data?.details) {
+      errorMessage = error.response.data.details;
+      console.error('❌ Backend error details:', errorMessage);
     } else if (error.message) {
       errorMessage = error.message;
     } else if (error.code === 'ECONNABORTED') {
@@ -228,7 +268,7 @@ const handleCheckout = async () => {
     } else if (error.response?.status === 404) {
       errorMessage = 'Order service not found. Please contact support.';
     }
-    
+
     Alert.alert('Order Failed', errorMessage);
   } finally {
     setLoading(false);
@@ -291,7 +331,25 @@ useEffect(() => {
     const subtotal = calculateSubtotal();
     const shipping = calculateShipping();
     const tax = calculateTax();
-    return subtotal + shipping + tax;
+    const grandTotal = subtotal + shipping + tax;
+
+    // If wallet is being used, deduct wallet balance
+    if (useWalletAmount) {
+      const walletDeduction = Math.min(walletBalance, grandTotal);
+      return Math.max(0, grandTotal - walletDeduction);
+    }
+
+    return grandTotal;
+  };
+
+  const getWalletDeduction = () => {
+    if (!useWalletAmount) return 0;
+    const grandTotal = calculateSubtotal() + calculateShipping() + calculateTax();
+    return Math.min(walletBalance, grandTotal);
+  };
+
+  const getFinalTotal = () => {
+    return calculateTotal();
   };
 
   const calculateTotalItems = () => {
@@ -438,11 +496,33 @@ useEffect(() => {
                 <Text style={styles.summaryLabel}>Tax (8%)</Text>
                 <Text style={styles.summaryValue}>₹{calculateTax().toFixed(2)}</Text>
               </View>
-              
+
+              {useWalletAmount && walletBalance > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={[styles.summaryLabel, { color: '#4caf50' }]}>
+                    Wallet Deduction
+                  </Text>
+                  <Text style={[styles.summaryValue, { color: '#4caf50' }]}>
+                    -₹{getWalletDeduction().toFixed(2)}
+                  </Text>
+                </View>
+              )}
+
               <View style={[styles.summaryRow, styles.totalRow]}>
-                <Text style={styles.totalLabel}>Total Amount</Text>
+                <Text style={styles.totalLabel}>
+                  {useWalletAmount ? 'Amount Payable' : 'Total Amount'}
+                </Text>
                 <Text style={styles.totalValue}>₹{calculateTotal().toFixed(2)}</Text>
               </View>
+
+              {useWalletAmount && calculateTotal() === 0 && (
+                <View style={styles.freeOrderBadge}>
+                  <MaterialIcons name="check-circle" size={16} color="#4caf50" />
+                  <Text style={styles.freeOrderText}>
+                    Order fully paid from wallet! No cash required on delivery.
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Delivery Address */}
@@ -488,51 +568,63 @@ useEffect(() => {
               )}
             </View>
 
+            {/* Wallet Balance */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Wallet Balance</Text>
+
+              <View style={styles.walletCard}>
+                <MaterialIcons name="account-balance-wallet" size={32} color="#4caf50" />
+                <View style={styles.walletInfo}>
+                  <Text style={styles.walletLabel}>Available Balance</Text>
+                  <Text style={styles.walletBalance}>₹{walletBalance.toFixed(2)}</Text>
+                </View>
+              </View>
+
+              {walletBalance > 0 && (
+                <TouchableOpacity
+                  style={styles.useWalletCard}
+                  onPress={() => setUseWalletAmount(!useWalletAmount)}
+                >
+                  <View style={styles.useWalletLeft}>
+                    <MaterialIcons
+                      name={useWalletAmount ? "check-box" : "check-box-outline-blank"}
+                      size={24}
+                      color={useWalletAmount ? "#4caf50" : "#999"}
+                    />
+                    <View style={styles.useWalletInfo}>
+                      <Text style={styles.useWalletTitle}>Use Wallet Balance</Text>
+                      <Text style={styles.useWalletSubtitle}>
+                        {useWalletAmount
+                          ? `₹${getWalletDeduction().toFixed(2)} will be deducted`
+                          : 'Tap to use your wallet balance'}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              )}
+            </View>
+
             {/* Payment Method */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Payment Method</Text>
-              
-              <TouchableOpacity 
-                style={[styles.paymentCard, selectedPayment === 'card' && styles.selectedPaymentCard]}
-                onPress={() => setSelectedPayment('card')}
-              >
-                <MaterialIcons name="credit-card" size={24} color="#4caf50" />
-                <View style={styles.paymentInfo}>
-                  <Text style={styles.paymentTitle}>Credit/Debit Card</Text>
-                  <Text style={styles.paymentSubtitle}>Visa •••• 1234</Text>
-                </View>
-                {selectedPayment === 'card' && (
-                  <MaterialIcons name="check-circle" size={20} color="#4caf50" />
-                )}
-              </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={[styles.paymentCard, selectedPayment === 'upi' && styles.selectedPaymentCard]}
-                onPress={() => setSelectedPayment('upi')}
-              >
-                <MaterialIcons name="account-balance-wallet" size={24} color="#2196f3" />
-                <View style={styles.paymentInfo}>
-                  <Text style={styles.paymentTitle}>UPI Payment</Text>
-                  <Text style={styles.paymentSubtitle}>Pay via UPI</Text>
-                </View>
-                {selectedPayment === 'upi' && (
-                  <MaterialIcons name="check-circle" size={20} color="#4caf50" />
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.paymentCard, selectedPayment === 'cod' && styles.selectedPaymentCard]}
-                onPress={() => setSelectedPayment('cod')}
-              >
+              <View style={[styles.paymentCard, styles.selectedPaymentCard]}>
                 <MaterialIcons name="local-atm" size={24} color="#ff9800" />
                 <View style={styles.paymentInfo}>
                   <Text style={styles.paymentTitle}>Cash on Delivery</Text>
-                  <Text style={styles.paymentSubtitle}>Pay when delivered</Text>
+                  <Text style={styles.paymentSubtitle}>Pay when your order is delivered</Text>
                 </View>
-                {selectedPayment === 'cod' && (
-                  <MaterialIcons name="check-circle" size={20} color="#4caf50" />
-                )}
-              </TouchableOpacity>
+                <MaterialIcons name="check-circle" size={20} color="#4caf50" />
+              </View>
+
+              {useWalletAmount && (
+                <View style={styles.walletInfoBox}>
+                  <MaterialIcons name="info-outline" size={16} color="#2196f3" />
+                  <Text style={styles.walletInfoText}>
+                    Wallet balance will be deducted, remaining amount payable on delivery
+                  </Text>
+                </View>
+              )}
             </View>
           </ScrollView>
 
@@ -888,6 +980,84 @@ const styles = StyleSheet.create({
   paymentSubtitle: {
     fontSize: 14,
     color: '#666',
+  },
+  walletCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f8e9',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#c5e1a5',
+    marginBottom: 12,
+  },
+  walletInfo: {
+    marginLeft: 15,
+    flex: 1,
+  },
+  walletLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  walletBalance: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#4caf50',
+  },
+  useWalletCard: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  useWalletLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  useWalletInfo: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  useWalletTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  useWalletSubtitle: {
+    fontSize: 14,
+    color: '#666',
+  },
+  walletInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e3f2fd',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  walletInfoText: {
+    fontSize: 13,
+    color: '#1976d2',
+    marginLeft: 8,
+    flex: 1,
+  },
+  freeOrderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e8f5e9',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  freeOrderText: {
+    fontSize: 14,
+    color: '#2e7d32',
+    fontWeight: '600',
+    marginLeft: 8,
+    flex: 1,
   },
   checkoutContainer: {
     position: 'absolute',

@@ -6,8 +6,9 @@ import { useAddress } from './AddressContext';
 import Geolocation from '@react-native-community/geolocation';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getBackendUrl } from '../../util/backendConfig';
 
-const BASE_URL = 'https://taxi.webase.co.in';
+const BASE_URL = getBackendUrl();
 
 const AddressManagement = () => {
   const navigation = useNavigation();
